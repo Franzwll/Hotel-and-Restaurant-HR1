@@ -1,0 +1,775 @@
+import { useState } from "react";
+import {
+  CheckCircle2,
+  ClipboardList,
+  Cog,
+  FileText,
+  Plus,
+  RotateCcw,
+  Search,
+  XCircle,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { PageHeader } from "@/components/portal/PageHeader";
+import { StatCard } from "@/components/portal/StatCard";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { essRequests as seed, requestCategories, type ESSRequest } from "@/data/ess";
+import { departments, employees } from "@/data/hr";
+import { auditLogs } from "@/data/users";
+
+type Status = ESSRequest["status"] | "Returned for Clarification";
+type Row = Omit<ESSRequest, "status" | "note"> & {
+  status: Status;
+  note?: string | undefined;
+  returnedCount?: number | undefined;
+};
+
+const statusClass: Record<Status, string> = {
+  Pending: "border-warning/40 bg-warning/20 text-warning-foreground",
+  "Under Review": "border-gold/40 bg-gold-soft text-foreground",
+  Approved: "border-success/30 bg-success/15 text-success",
+  Rejected: "border-destructive/30 bg-destructive/15 text-destructive",
+  Completed: "border-border bg-muted text-muted-foreground",
+  "Returned for Clarification": "border-primary/30 bg-primary/10 text-primary",
+};
+
+const reportOptions = [
+  "Request Summary Report",
+  "Attendance Request Summary",
+  "Leave Request Summary",
+  "Payroll Request Summary",
+  "Document Request Summary",
+  "Average Processing Time",
+  "Branch Performance",
+  "Approval Performance",
+  "ESS Usage Statistics",
+];
+
+export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
+  const [rows, setRows] = useState<Row[]>(seed);
+  const [dept, setDept] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [reviewDecision, setReviewDecision] = useState<
+    "Approved" | "Rejected" | "Returned for Clarification"
+  >("Approved");
+  const [reviewNote, setReviewNote] = useState("");
+  const [confirmReject, setConfirmReject] = useState(false);
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("all");
+
+  const filtered = rows.filter((r) => {
+    if (dept !== "all" && r.department !== dept) return false;
+    if (status !== "all" && r.status !== status) return false;
+    if (category !== "all" && r.category !== category) return false;
+    if (
+      search &&
+      !`${r.employee} ${r.type} ${r.id}`.toLowerCase().includes(search.toLowerCase())
+    )
+      return false;
+    return true;
+  });
+
+  const setReqStatus = (id: string, s: Status, note?: string | undefined) =>
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              status: s,
+              note,
+              returnedCount:
+                s === "Returned for Clarification"
+                  ? (r.returnedCount ?? 0) + 1
+                  : r.returnedCount,
+            }
+          : r,
+      ),
+    );
+
+  const bulk = (s: Status) => {
+    setRows((prev) => prev.map((r) => (selected.includes(r.id) ? { ...r, status: s } : r)));
+    toast.success(`${selected.length} request(s) ${s.toLowerCase()}`);
+    setSelected([]);
+  };
+
+  const count = (s: Status) => rows.filter((r) => r.status === s).length;
+
+  const reviewRow = rows.find((r) => r.id === reviewId) ?? null;
+
+  // Opening a review takes ownership: Pending auto-promotes to Under Review.
+  const openReview = (id: string) => {
+    setRows((prev) =>
+      prev.map((r) => (r.id === id && r.status === "Pending" ? { ...r, status: "Under Review" } : r)),
+    );
+    setReviewId(id);
+    setReviewDecision("Approved");
+    setReviewNote("");
+    setConfirmReject(false);
+  };
+
+  // Employee answered a returned request → back into the reviewer's queue.
+  const employeeReplied = (id: string) => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === id ? { ...r, status: "Under Review", note: "Employee submitted clarification" } : r,
+      ),
+    );
+    toast.success(`${id} returned to review queue`);
+  };
+
+  const submitReview = () => {
+    if (!reviewRow) return;
+    if (reviewDecision !== "Approved" && !reviewNote.trim()) {
+      toast.error(
+        reviewDecision === "Rejected"
+          ? "A reason for rejection is required"
+          : "Add a note explaining what clarification is needed",
+      );
+      return;
+    }
+    if (reviewDecision === "Rejected" && !confirmReject) {
+      setConfirmReject(true);
+      return;
+    }
+    setReqStatus(reviewRow.id, reviewDecision, reviewNote.trim() || undefined);
+    toast.success(
+      reviewDecision === "Returned for Clarification"
+        ? `${reviewRow.id} returned to the employee`
+        : `${reviewRow.id} marked as ${reviewDecision.toLowerCase()}`,
+    );
+    setReviewId(null);
+    setConfirmReject(false);
+  };
+
+  return (
+    <div>
+      <PageHeader
+        eyebrow={role === "superadmin" ? "Super Admin · Core HR" : "Admin · Core HR"}
+        title="ESS Management"
+        description={
+          role === "superadmin"
+            ? "Organization-wide monitoring, bulk processing, workflow and policy configuration."
+            : "Process, approve and track employee self-service requests for your departments."
+        }
+        actions={
+          <Button size="sm" variant="outline" onClick={() => setReportsOpen(true)}>
+            <FileText className="mr-2 h-4 w-4" /> Generate reports
+          </Button>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        <StatCard
+          label="Total Requests"
+          value={rows.length}
+          icon={ClipboardList}
+          tone="primary"
+          onClick={() => setStatus("all")}
+        />
+        <StatCard
+          label="Pending"
+          value={count("Pending")}
+          tone="caution"
+          onClick={() => setStatus("Pending")}
+        />
+        <StatCard
+          label="Under Review"
+          value={count("Under Review")}
+          tone="gold"
+          onClick={() => setStatus("Under Review")}
+        />
+        <StatCard
+          label="Returned"
+          value={count("Returned for Clarification")}
+          icon={RotateCcw}
+          hint="Awaiting employee response"
+          onClick={() => setStatus("Returned for Clarification")}
+        />
+        <StatCard
+          label="Approved"
+          value={count("Approved")}
+          tone="success"
+          onClick={() => setStatus("Approved")}
+        />
+        <StatCard
+          label="Completed"
+          value={count("Completed")}
+          onClick={() => setStatus("Completed")}
+        />
+      </div>
+
+
+      <Tabs defaultValue="requests" className="mt-6">
+        <TabsList className="flex h-auto flex-wrap justify-start">
+          <TabsTrigger value="requests">Request Queue</TabsTrigger>
+          {role === "superadmin" && <TabsTrigger value="config">ESS Administration</TabsTrigger>}
+          {role === "superadmin" && <TabsTrigger value="audit">Audit &amp; Compliance</TabsTrigger>}
+        </TabsList>
+
+        <TabsContent value="requests" className="mt-4">
+          <Card className="border-border/70">
+            <CardContent className="p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-display text-2xl font-semibold">Employee Requests</h2>
+                <div className="flex flex-wrap gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      className="w-56 pl-9"
+                      placeholder="Search employee or request…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </div>
+                  <Select value={dept} onValueChange={setDept}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All departments</SelectItem>
+                      {departments.map((d) => (
+                        <SelectItem key={d.code} value={d.name}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={status} onValueChange={setStatus}>
+                    <SelectTrigger className="w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      {[
+                        "Pending",
+                        "Under Review",
+                        "Returned for Clarification",
+                        "Approved",
+                        "Rejected",
+                        "Completed",
+                      ].map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s === "Returned for Clarification" ? "Returned" : s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="All categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All categories</SelectItem>
+                      {requestCategories.map((c) => (
+                        <SelectItem key={c.name} value={c.name}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {role === "superadmin" && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={selected.length === 0}
+                        onClick={() => bulk("Approved")}
+                      >
+                        Bulk approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={selected.length === 0}
+                        onClick={() => bulk("Rejected")}
+                      >
+                        Bulk reject
+                      </Button>
+                    </>
+                  )}
+
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button size="sm">
+                        <Plus className="mr-2 h-4 w-4" /> Create on behalf
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle className="font-display text-2xl">
+                          Create Request on Behalf of Employee
+                        </DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-3">
+                        <div className="space-y-2">
+                          <Label>Employee</Label>
+                          <Select>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select employee" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {employees.map((e) => (
+                                <SelectItem key={e.id} value={e.id}>
+                                  {e.name} — {e.department}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Request category</Label>
+                          <Select>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {requestCategories.map((c) => (
+                                <SelectItem key={c.name} value={c.name}>
+                                  {c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Details</Label>
+                          <Textarea rows={3} placeholder="Walk-in / phone request details…" />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button onClick={() => toast.success("Request filed on behalf of employee")}>
+                          File request
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </div>
+
+              <div className="mt-4 overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {role === "superadmin" && <TableHead className="w-10" />}
+                      <TableHead>Request</TableHead>
+                      <TableHead>Employee</TableHead>
+                      <TableHead>Category / Type</TableHead>
+                      <TableHead>Filed</TableHead>
+                      <TableHead>Assigned To</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((r) => (
+                      <TableRow key={r.id}>
+                        {role === "superadmin" && (
+                          <TableCell>
+                            <Checkbox
+                              checked={selected.includes(r.id)}
+                              onCheckedChange={() =>
+                                setSelected((p) =>
+                                  p.includes(r.id) ? p.filter((x) => x !== r.id) : [...p, r.id],
+                                )
+                              }
+                            />
+                          </TableCell>
+                        )}
+                        <TableCell className="text-xs font-medium">{r.id}</TableCell>
+                        <TableCell className="text-sm">
+                          <p>{r.employee}</p>
+                          <p className="text-xs text-muted-foreground">{r.department}</p>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <p>{r.type}</p>
+                          <p className="text-xs text-muted-foreground">{r.category}</p>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{r.filed}</TableCell>
+                        <TableCell className="text-xs">{r.assignedTo}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={statusClass[r.status]}>
+                            {r.status === "Returned for Clarification" ? "Returned" : r.status}
+                          </Badge>
+                          {r.status === "Returned for Clarification" && (
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              Awaiting employee response
+                            </p>
+                          )}
+                          {(r.returnedCount ?? 0) > 1 && (
+                            <p className="mt-1 text-[11px] text-caution">
+                              Returned {r.returnedCount}×
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-1">
+                            {r.status === "Returned for Clarification" ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => employeeReplied(r.id)}
+                              >
+                                <RotateCcw className="mr-2 h-4 w-4" /> Employee replied
+                              </Button>
+                            ) : r.status === "Pending" || r.status === "Under Review" ? (
+                              <>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  title="Approve"
+                                  onClick={() => {
+                                    setReqStatus(r.id, "Approved");
+                                    toast.success(`${r.id} approved`);
+                                  }}
+                                >
+                                  <CheckCircle2 className="h-4 w-4 text-success" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  title="Reject (opens review — a reason is required)"
+                                  onClick={() => {
+                                    openReview(r.id);
+                                    setReviewDecision("Rejected");
+                                  }}
+                                >
+                                  <XCircle className="h-4 w-4 text-destructive" />
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => openReview(r.id)}>
+                                  Review
+                                </Button>
+                              </>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Closed</span>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        {role === "superadmin" && (
+          <TabsContent value="config" className="mt-4">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card className="border-border/70">
+                <CardContent className="p-6">
+                  <h2 className="font-display text-2xl font-semibold">Request Types</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Enable or disable request categories in the service catalog.
+                  </p>
+                  <div className="mt-4 space-y-2">
+                    {requestCategories.map((c) => (
+                      <div
+                        key={c.name}
+                        className="flex items-center justify-between rounded-md border border-border p-3"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{c.name}</p>
+                          <p className="text-[0.7rem] text-muted-foreground">
+                            {c.types.length} request types
+                          </p>
+                        </div>
+                        <Switch defaultChecked />
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/70">
+                <CardContent className="space-y-5 p-6">
+                  <div>
+                    <h2 className="font-display text-2xl font-semibold">
+                      Workflow, Policies &amp; SLA
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      Approval routing, escalation and notification configuration.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Approval levels</Label>
+                    <Select defaultValue="2">
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Single level (HR Officer)</SelectItem>
+                        <SelectItem value="2">Two levels (Supervisor → HR)</SelectItem>
+                        <SelectItem value="3">Three levels (Supervisor → HR → GM)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>SLA — first response (hrs)</Label>
+                      <Input type="number" defaultValue={8} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>SLA — resolution (hrs)</Label>
+                      <Input type="number" defaultValue={48} />
+                    </div>
+                  </div>
+                  {[
+                    "Auto-assign by department",
+                    "Escalate on SLA breach",
+                    "Email notifications",
+                    "In-system notifications",
+                    "Require attachment for leave with pay",
+                  ].map((s) => (
+                    <div key={s} className="flex items-center justify-between">
+                      <span className="text-sm">{s}</span>
+                      <Switch defaultChecked />
+                    </div>
+                  ))}
+                  <Button onClick={() => toast.success("ESS configuration saved")}>
+                    <Cog className="mr-2 h-4 w-4" /> Save configuration
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        )}
+
+        {role === "superadmin" && (
+          <TabsContent value="audit" className="mt-4">
+            <Card className="border-border/70">
+              <CardContent className="p-6">
+                <h2 className="font-display text-2xl font-semibold">ESS Activity Log</h2>
+                <div className="mt-4 overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Timestamp</TableHead>
+                        <TableHead>User</TableHead>
+                        <TableHead>Action</TableHead>
+                        <TableHead>Module</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {auditLogs.map((a) => (
+                        <TableRow key={a.id}>
+                          <TableCell className="text-xs">{a.timestamp}</TableCell>
+                          <TableCell className="text-xs">{a.user}</TableCell>
+                          <TableCell className="text-sm">{a.action}</TableCell>
+                          <TableCell className="text-xs">{a.module}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+      </Tabs>
+
+      <Dialog open={reviewId !== null} onOpenChange={(open) => !open && setReviewId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl">
+              Review Request {reviewRow?.id}
+            </DialogTitle>
+          </DialogHeader>
+          {reviewRow && (
+            <div className="space-y-4">
+              <div className="rounded-md border border-border p-3 text-sm">
+                <p>
+                  <span className="text-muted-foreground">Employee:</span> {reviewRow.employee} (
+                  {reviewRow.department})
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Request:</span> {reviewRow.type} —{" "}
+                  {reviewRow.category}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Filed:</span> {reviewRow.filed}
+                </p>
+                {reviewRow.note && (
+                  <p className="mt-1 text-xs text-muted-foreground">Note: {reviewRow.note}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Decision</Label>
+                <RadioGroup
+                  value={reviewDecision}
+                  onValueChange={(v) => {
+                    setReviewDecision(v as typeof reviewDecision);
+                    setConfirmReject(false);
+                  }}
+                  className="gap-2"
+                >
+                  {(
+                    [
+                      {
+                        value: "Approved",
+                        id: "decision-approve",
+                        label: "Approve",
+                        help: "Employee is notified and the request is finalised.",
+                        active: "border-success/50 bg-success/10",
+                      },
+                      {
+                        value: "Returned for Clarification",
+                        id: "decision-clarify",
+                        label: "Request clarification",
+                        help: "Sent back to the employee — they can edit and resubmit the same request.",
+                        active: "border-primary/50 bg-primary/10",
+                      },
+                      {
+                        value: "Rejected",
+                        id: "decision-reject",
+                        label: "Reject",
+                        help: "Request is closed permanently; the employee must file a new one.",
+                        active: "border-destructive/50 bg-destructive/10",
+                      },
+                    ] as const
+                  ).map((o) => (
+                    <label
+                      key={o.value}
+                      htmlFor={o.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${
+                        reviewDecision === o.value ? o.active : "border-border hover:bg-muted/50"
+                      }`}
+                    >
+                      <RadioGroupItem value={o.value} id={o.id} className="mt-0.5" />
+                      <span>
+                        <span className="block text-sm font-medium">{o.label}</span>
+                        <span className="block text-xs text-muted-foreground">{o.help}</span>
+                      </span>
+                    </label>
+                  ))}
+                </RadioGroup>
+              </div>
+
+              <div className="space-y-2">
+                <Label>
+                  {reviewDecision === "Rejected"
+                    ? "Reason for rejection (required)"
+                    : reviewDecision === "Returned for Clarification"
+                      ? "What do you need from the employee? (required)"
+                      : "Note (optional)"}
+                </Label>
+                <Textarea
+                  rows={3}
+                  value={reviewNote}
+                  onChange={(e) => setReviewNote(e.target.value)}
+                  placeholder={
+                    reviewDecision === "Returned for Clarification"
+                      ? "e.g. Please attach the medical certificate for 12–13 Aug."
+                      : reviewDecision === "Rejected"
+                        ? "e.g. Leave credits are insufficient for the requested dates."
+                        : "Add remarks for the audit trail…"
+                  }
+                />
+                {reviewDecision !== "Approved" && reviewNote.trim() && (
+                  <div className="rounded-md border border-dashed border-border p-2.5">
+                    <p className="eyebrow">Employee will see</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{reviewNote}</p>
+                  </div>
+                )}
+              </div>
+
+              {confirmReject && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+                  Rejecting closes this request permanently. Press “Confirm rejection” to continue,
+                  or switch to “Request clarification” if the employee can still fix it.
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReviewId(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant={reviewDecision === "Rejected" ? "destructive" : "default"}
+              onClick={submitReview}
+            >
+              {reviewDecision === "Rejected"
+                ? confirmReject
+                  ? "Confirm rejection"
+                  : "Reject request"
+                : reviewDecision === "Returned for Clarification"
+                  ? "Return to employee"
+                  : "Approve request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reportsOpen} onOpenChange={setReportsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl">Generate Reports</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {(role === "superadmin"
+              ? reportOptions
+              : reportOptions.filter(
+                  (r) => !["Branch Performance", "Approval Performance", "ESS Usage Statistics"].includes(r),
+                )
+            ).map((r) => (
+              <div
+                key={r}
+                className="flex items-center justify-between rounded-md border border-border p-3"
+              >
+                <span className="text-sm">{r}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    toast.success(`${r} generated`);
+                    setReportsOpen(false);
+                  }}
+                >
+                  Generate
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

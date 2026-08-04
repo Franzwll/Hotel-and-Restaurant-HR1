@@ -1,0 +1,417 @@
+export type Department = {
+  code: string;
+  name: string;
+  description: string;
+  head: string;
+  staff: number;
+  openRequisitions: number;
+  budget: number;
+};
+
+export const departments: Department[] = [
+  {
+    code: "DEP-FO",
+    name: "Front Office",
+    description: "Front Desk, Concierge, Reservations, Guest Services",
+    head: "Ana Ramos",
+    staff: 14,
+    openRequisitions: 3,
+    budget: 2800000,
+  },
+  {
+    code: "DEP-FB",
+    name: "Food & Beverage",
+    description: "Dining Room, Bar Operations, Room Service",
+    head: "Chef Gabriel Mendoza",
+    staff: 22,
+    openRequisitions: 6,
+    budget: 3500000,
+  },
+  {
+    code: "DEP-KC",
+    name: "Kitchen / Culinary",
+    description: "Main Hotel Kitchen, Banquet Catering, Pastry",
+    head: "Executive Chef Marco",
+    staff: 19,
+    openRequisitions: 4,
+    budget: 4200000,
+  },
+  {
+    code: "DEP-HK",
+    name: "Housekeeping",
+    description: "Guestroom Operations, Linen & Laundry, Public Areas",
+    head: "Lourdes Bautista",
+    staff: 25,
+    openRequisitions: 5,
+    budget: 2400000,
+  },
+  {
+    code: "DEP-HR",
+    name: "Administration / HR",
+    description: "Human Resources, Accounting, General Maintenance",
+    head: "Juan Dela Cruz",
+    staff: 9,
+    openRequisitions: 1,
+    budget: 3100000,
+  },
+];
+
+export type Position = {
+  id: string;
+  title: string;
+  department: string;
+  level: "Rank & File" | "Supervisory" | "Managerial" | "Executive";
+  headcount: number;
+  filled: number;
+  salaryBand: string;
+};
+
+export const positions: Position[] = [
+  {
+    id: "POS-001",
+    title: "Front Desk Receptionist",
+    department: "Front Office",
+    level: "Rank & File",
+    headcount: 8,
+    filled: 5,
+    salaryBand: "₱18,000 – ₱22,000",
+  },
+  {
+    id: "POS-002",
+    title: "Guest Relations Officer",
+    department: "Front Office",
+    level: "Supervisory",
+    headcount: 3,
+    filled: 3,
+    salaryBand: "₱25,000 – ₱30,000",
+  },
+  {
+    id: "POS-003",
+    title: "Restaurant Server",
+    department: "Food & Beverage",
+    level: "Rank & File",
+    headcount: 12,
+    filled: 8,
+    salaryBand: "₱15,000 – ₱18,000",
+  },
+  {
+    id: "POS-004",
+    title: "Bartender",
+    department: "Food & Beverage",
+    level: "Rank & File",
+    headcount: 4,
+    filled: 2,
+    salaryBand: "₱16,000 – ₱19,000",
+  },
+  {
+    id: "POS-005",
+    title: "Line Cook",
+    department: "Kitchen / Culinary",
+    level: "Rank & File",
+    headcount: 10,
+    filled: 6,
+    salaryBand: "₱16,000 – ₱20,000",
+  },
+  {
+    id: "POS-006",
+    title: "Pastry Chef",
+    department: "Kitchen / Culinary",
+    level: "Supervisory",
+    headcount: 2,
+    filled: 2,
+    salaryBand: "₱32,000 – ₱38,000",
+  },
+  {
+    id: "POS-007",
+    title: "Housekeeping Attendant",
+    department: "Housekeeping",
+    level: "Rank & File",
+    headcount: 18,
+    filled: 13,
+    salaryBand: "₱14,000 – ₱17,000",
+  },
+  {
+    id: "POS-008",
+    title: "HR Assistant",
+    department: "Administration / HR",
+    level: "Rank & File",
+    headcount: 3,
+    filled: 2,
+    salaryBand: "₱20,000 – ₱25,000",
+  },
+];
+
+export type OrgNode = {
+  name: string;
+  title: string;
+  children?: OrgNode[];
+};
+
+export const orgChart: OrgNode = {
+  name: "Ricardo Villanueva",
+  title: "General Manager",
+  children: [
+    {
+      name: "Juan Dela Cruz",
+      title: "HR & Administration Manager",
+      children: [
+        { name: "Maria Lim", title: "HR Officer" },
+        { name: "Paolo Cruz", title: "Accounting Supervisor" },
+      ],
+    },
+    {
+      name: "Ana Ramos",
+      title: "Front Office Manager",
+      children: [
+        { name: "Camille Ortega", title: "Guest Relations Officer" },
+        { name: "Bianca Soriano", title: "Front Desk Receptionist" },
+      ],
+    },
+    {
+      name: "Chef Gabriel Mendoza",
+      title: "F&B Director",
+      children: [
+        { name: "Executive Chef Marco", title: "Executive Chef" },
+        { name: "Kevin Dela Cruz", title: "Line Cook" },
+      ],
+    },
+    {
+      name: "Lourdes Bautista",
+      title: "Executive Housekeeper",
+      children: [{ name: "Rosa Aquino", title: "Floor Supervisor" }],
+    },
+  ],
+};
+
+export type NewHire = {
+  id: string;
+  name: string;
+  position: string;
+  department: string;
+  stage: "Pre-onboarding" | "Probationary" | "Regular";
+  startDate: string;
+  initials: string;
+  checklist: { item: string; done: boolean }[];
+  email: string;
+  phone: string;
+};
+
+export const newHires: NewHire[] = [
+  {
+    id: "NH-01",
+    name: "Camille Ortega",
+    position: "Guest Relations Officer",
+    department: "Front Office",
+    stage: "Pre-onboarding",
+    startDate: "2026-08-04",
+    initials: "CO",
+    email: "camille.ortega@email.com",
+    phone: "0917 664 2219",
+    checklist: [
+      { item: "Signed employment contract", done: true },
+      { item: "NBI / Police clearance", done: true },
+      { item: "Pre-employment medical exam", done: false },
+      { item: "SSS / PhilHealth / Pag-IBIG / TIN", done: false },
+      { item: "Birth certificate (PSA)", done: false },
+      { item: "Company orientation attended", done: false },
+      { item: "Uniform & ID issued", done: false },
+      { item: "Department on-the-job training", done: false },
+    ],
+  },
+  {
+    id: "NH-02",
+    name: "Bianca Soriano",
+    position: "Front Desk Receptionist",
+    department: "Front Office",
+    stage: "Pre-onboarding",
+    startDate: "2026-08-04",
+    initials: "BS",
+    email: "bianca.soriano@email.com",
+    phone: "0912 345 6789",
+    checklist: [
+      { item: "Signed employment contract", done: true },
+      { item: "NBI / Police clearance", done: true },
+      { item: "Pre-employment medical exam", done: true },
+      { item: "SSS / PhilHealth / Pag-IBIG / TIN", done: true },
+      { item: "Birth certificate (PSA)", done: true },
+      { item: "Company orientation attended", done: false },
+      { item: "Uniform & ID issued", done: false },
+      { item: "Department on-the-job training", done: false },
+    ],
+  },
+  {
+    id: "NH-03",
+    name: "Kevin Dela Cruz",
+    position: "Line Cook",
+    department: "Kitchen / Culinary",
+    stage: "Probationary",
+    startDate: "2026-04-15",
+    initials: "KDC",
+    email: "kevin.delacruz@email.com",
+    phone: "0921 774 9903",
+    checklist: [
+      { item: "Signed employment contract", done: true },
+      { item: "NBI / Police clearance", done: true },
+      { item: "Pre-employment medical exam", done: true },
+      { item: "SSS / PhilHealth / Pag-IBIG / TIN", done: true },
+      { item: "Birth certificate (PSA)", done: true },
+      { item: "Company orientation attended", done: true },
+      { item: "Uniform & ID issued", done: true },
+      { item: "Department on-the-job training", done: false },
+    ],
+  },
+  {
+    id: "NH-04",
+    name: "Jompaks Berdugo",
+    position: "Bartender",
+    department: "Food & Beverage",
+    stage: "Probationary",
+    startDate: "2026-03-01",
+    initials: "JB",
+    email: "jompaks.berdugo@email.com",
+    phone: "0933 552 1180",
+    checklist: [
+      { item: "Signed employment contract", done: true },
+      { item: "NBI / Police clearance", done: true },
+      { item: "Pre-employment medical exam", done: true },
+      { item: "SSS / PhilHealth / Pag-IBIG / TIN", done: true },
+      { item: "Birth certificate (PSA)", done: true },
+      { item: "Company orientation attended", done: true },
+      { item: "Uniform & ID issued", done: true },
+      { item: "Department on-the-job training", done: true },
+    ],
+  },
+  {
+    id: "NH-05",
+    name: "Marjun Devera",
+    position: "Restaurant Server",
+    department: "Food & Beverage",
+    stage: "Regular",
+    startDate: "2025-09-16",
+    initials: "MD",
+    email: "marjun.devera@email.com",
+    phone: "0917 664 2219",
+    checklist: [
+      { item: "Signed employment contract", done: true },
+      { item: "NBI / Police clearance", done: true },
+      { item: "Pre-employment medical exam", done: true },
+      { item: "SSS / PhilHealth / Pag-IBIG / TIN", done: true },
+      { item: "Birth certificate (PSA)", done: true },
+      { item: "Company orientation attended", done: true },
+      { item: "Uniform & ID issued", done: true },
+      { item: "Regularization evaluation passed", done: true },
+    ],
+  },
+];
+
+export type Employee = {
+  id: string;
+  name: string;
+  position: string;
+  department: string;
+  employmentType: "Regular" | "Probationary" | "Contractual";
+  dateHired: string;
+  email: string;
+  phone: string;
+  supervisor: string;
+  status: "Active" | "Inactive";
+};
+
+export const employees: Employee[] = [
+  {
+    id: "EMP-0001",
+    name: "Ana Ramos",
+    position: "Front Office Manager",
+    department: "Front Office",
+    employmentType: "Regular",
+    dateHired: "2019-02-11",
+    email: "ana.ramos@oxfordsuites.com.ph",
+    phone: "0917 100 1001",
+    supervisor: "Ricardo Villanueva",
+    status: "Active",
+  },
+  {
+    id: "EMP-0002",
+    name: "Chef Gabriel Mendoza",
+    position: "F&B Director",
+    department: "Food & Beverage",
+    employmentType: "Regular",
+    dateHired: "2018-06-04",
+    email: "gabriel.mendoza@oxfordsuites.com.ph",
+    phone: "0917 100 1002",
+    supervisor: "Ricardo Villanueva",
+    status: "Active",
+  },
+  {
+    id: "EMP-0003",
+    name: "Lourdes Bautista",
+    position: "Executive Housekeeper",
+    department: "Housekeeping",
+    employmentType: "Regular",
+    dateHired: "2017-11-20",
+    email: "lourdes.bautista@oxfordsuites.com.ph",
+    phone: "0917 100 1003",
+    supervisor: "Ricardo Villanueva",
+    status: "Active",
+  },
+  {
+    id: "EMP-0004",
+    name: "Camille Ortega",
+    position: "Guest Relations Officer",
+    department: "Front Office",
+    employmentType: "Probationary",
+    dateHired: "2026-08-04",
+    email: "camille.ortega@oxfordsuites.com.ph",
+    phone: "0917 664 2219",
+    supervisor: "Ana Ramos",
+    status: "Active",
+  },
+  {
+    id: "EMP-0005",
+    name: "Kevin Dela Cruz",
+    position: "Line Cook",
+    department: "Kitchen / Culinary",
+    employmentType: "Probationary",
+    dateHired: "2026-04-15",
+    email: "kevin.delacruz@oxfordsuites.com.ph",
+    phone: "0921 774 9903",
+    supervisor: "Executive Chef Marco",
+    status: "Active",
+  },
+  {
+    id: "EMP-0006",
+    name: "Marjun Devera",
+    position: "Restaurant Server",
+    department: "Food & Beverage",
+    employmentType: "Regular",
+    dateHired: "2025-09-16",
+    email: "marjun.devera@oxfordsuites.com.ph",
+    phone: "0917 664 2219",
+    supervisor: "Chef Gabriel Mendoza",
+    status: "Active",
+  },
+  {
+    id: "EMP-0007",
+    name: "Juan Dela Cruz",
+    position: "HR & Administration Manager",
+    department: "Administration / HR",
+    employmentType: "Regular",
+    dateHired: "2016-01-18",
+    email: "juan.delacruz@oxfordsuites.com.ph",
+    phone: "0917 100 1007",
+    supervisor: "Ricardo Villanueva",
+    status: "Active",
+  },
+  {
+    id: "EMP-0008",
+    name: "Rosa Aquino",
+    position: "Floor Supervisor",
+    department: "Housekeeping",
+    employmentType: "Regular",
+    dateHired: "2021-05-03",
+    email: "rosa.aquino@oxfordsuites.com.ph",
+    phone: "0917 100 1008",
+    supervisor: "Lourdes Bautista",
+    status: "Active",
+  },
+];
