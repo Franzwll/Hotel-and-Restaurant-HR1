@@ -3,6 +3,7 @@ import {
   CalendarClock,
   CalendarDays,
   ChevronLeft,
+  ChevronDown,
   ChevronRight,
   Info,
   CheckCircle2,
@@ -10,6 +11,7 @@ import {
   Download,
   Eye,
   FileText,
+  History,
   Image as ImageIcon,
   Mail,
   MoreHorizontal,
@@ -28,14 +30,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import {
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip as RTooltip,
-} from "recharts";
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from "recharts";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/portal/PageHeader";
@@ -55,6 +50,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -81,19 +77,40 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TablePagination } from "@/components/ui/table-pagination";
+import { usePagination } from "@/hooks/usePagination";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  applicantAuditLog,
   applicants as seedApplicants,
   assessmentCriteria,
   interviewers,
   interviews as seedInterviews,
   screeningCriteria,
   statusMeta,
+  TODAY_ISO,
   type Applicant,
   type ApplicantStatus,
+  type AuditEntry,
 } from "@/data/applicants";
-import { positions } from "@/data/hr";
+import { departments, positions } from "@/data/hr";
+import { hireStore } from "@/data/hires";
+import { useNavigate } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
+import { SortHead, useSort } from "@/components/portal/sortable";
+
+/** Badge tone per audit action type in the History & Audit log. */
+const auditBadgeClass = (action: string) => {
+  if (/Accepted|Completed/.test(action)) return "border-success/40 bg-success/10 text-success";
+  if (/Rejected|Cancelled|No-Show/.test(action))
+    return "border-destructive/40 bg-destructive/10 text-destructive";
+  if (/Booked|Scheduled|Started/.test(action)) return "border-primary/40 bg-primary/10 text-primary";
+  if (/Transferred|Status Change/.test(action))
+    return "border-warning/40 bg-warning/10 text-warning";
+  return "border-border bg-secondary text-secondary-foreground";
+};
+
+
 
 const statusChartColor: Record<ApplicantStatus, string> = {
   fit: "var(--color-success)",
@@ -150,7 +167,13 @@ const keywordLibrary: Record<string, string[]> = {
     "Public Area Cleaning",
     "TESDA Housekeeping NC II",
   ],
-  "HR Assistant": ["Recruitment", "201 Files", "Payroll Support", "BS Psychology", "DOLE Compliance"],
+  "HR Assistant": [
+    "Recruitment",
+    "201 Files",
+    "Payroll Support",
+    "BS Psychology",
+    "DOLE Compliance",
+  ],
 };
 
 const suggestedSlots = [
@@ -242,7 +265,34 @@ const reportOptions = [
 const isoOf = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
+const timeOf = (d: Date) =>
+  d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+
+const CURRENT_ACTOR = {
+  name: "Juan Dela Cruz",
+  position: "HR Officer",
+  department: "Administration / HR",
+};
+
+const monthNames = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+const yearOptions = Array.from({ length: 11 }, (_, i) => 2021 + i);
+
 export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) {
+  const navigate = useNavigate();
   const [rows, setRows] = useState<Applicant[]>(seedApplicants);
   const [tab, setTab] = useState("ranking");
   const [positionFilter, setPositionFilter] = useState<string>("all");
@@ -264,6 +314,9 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
   const [interviews, setInterviews] = useState(seedInterviews);
   const [assessments, setAssessments] = useState<AssessmentResult[]>(seedAssessments);
   const [assessmentFilter, setAssessmentFilter] = useState<"ready" | "completed" | "all">("all");
+  const [assessmentSearch, setAssessmentSearch] = useState("");
+  const [assessmentDept, setAssessmentDept] = useState<string>("all");
+  const [assessmentOutcome, setAssessmentOutcome] = useState<string>("all");
   const [evalScores, setEvalScores] = useState<Record<string, number>>({});
   const [evalRemarks, setEvalRemarks] = useState("");
   const [viewMonth, setViewMonth] = useState<Date>(new Date(2026, 7, 1));
@@ -279,6 +332,35 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
     mode: "On-site",
     interviewer: interviewers[0]!.name,
   });
+  const [scheduleDept, setScheduleDept] = useState<string>("all");
+
+  // Audit / history log
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>(applicantAuditLog);
+  const [auditSearch, setAuditSearch] = useState("");
+  const [auditActionFilter, setAuditActionFilter] = useState<string>("all");
+  const [auditDeptFilter, setAuditDeptFilter] = useState<string>("all");
+  const [auditActorFilter, setAuditActorFilter] = useState<string>("all");
+
+  const addAudit = (
+    entry: Omit<
+      AuditEntry,
+      "id" | "date" | "time" | "actorName" | "actorPosition" | "actorDepartment"
+    >,
+  ) => {
+    const now = new Date();
+    setAuditLog((prev) => [
+      {
+        id: `AUD-${String(prev.length + 1).padStart(3, "0")}-${now.getTime()}`,
+        date: isoOf(now),
+        time: timeOf(now),
+        actorName: CURRENT_ACTOR.name,
+        actorPosition: CURRENT_ACTOR.position,
+        actorDepartment: CURRENT_ACTOR.department,
+        ...entry,
+      },
+      ...prev,
+    ]);
+  };
 
   // Add-applicant flow
   const [addOpen, setAddOpen] = useState(false);
@@ -299,7 +381,8 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
   } | null>(null);
 
   const distribution = useMemo(() => {
-    const scoped = positionFilter === "all" ? rows : rows.filter((a) => a.position === positionFilter);
+    const scoped =
+      positionFilter === "all" ? rows : rows.filter((a) => a.position === positionFilter);
     return (Object.keys(statusMeta) as ApplicantStatus[]).map((k) => ({
       key: k,
       name: statusMeta[k].label,
@@ -321,13 +404,47 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
   const filtered = rows.filter((a) => {
     if (positionFilter !== "all" && a.position !== positionFilter) return false;
     if (statusFilter !== "all" && a.status !== statusFilter) return false;
-    if (search && !`${a.name} ${a.email} ${a.position}`.toLowerCase().includes(search.toLowerCase()))
+    if (
+      search &&
+      !`${a.name} ${a.email} ${a.position}`.toLowerCase().includes(search.toLowerCase())
+    )
       return false;
     return true;
   });
 
+  const applicantSort = useSort(filtered, {
+    name: (a) => a.name,
+    contact: (a) => a.email,
+    position: (a) => a.position,
+    applied: (a) => a.appliedAt,
+    score: (a) => a.score,
+    status: (a) => statusMeta[a.status].label,
+    stage: (a) => a.stage,
+  });
+
   const setStage = (id: string, stage: Applicant["stage"]) =>
     setRows((prev) => prev.map((a) => (a.id === id ? { ...a, stage } : a)));
+
+  /** Accepting an assessment hands the applicant to New Hire Onboarding as pre-onboarding. */
+  const acceptAssessment = (r: AssessmentResult) => {
+    const applicant = rows.find((a) => a.id === r.applicantId);
+    setStage(r.applicantId, "Hired");
+    addAudit({
+      actionType: "Assessment Accepted",
+      target: r.name,
+      module: "Applicant Management",
+      details: `Accepted after assessment (${r.total}%) and sent to New Hire Onboarding`,
+    });
+    hireStore.setPending({
+      name: r.name,
+      position: r.position,
+      department: positions.find((p) => p.title === r.position)?.department ?? "",
+      email: applicant?.email ?? "",
+      phone: applicant?.phone ?? "",
+    });
+    toast.success(`${r.name} accepted — creating their onboarding record`);
+    navigate({ to: `/${role}/onboarding` });
+  };
 
   /** Accept → prefill the scheduler and jump to the Interview Scheduling tab. */
   const acceptAndSchedule = (a: Applicant) => {
@@ -359,6 +476,12 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
       ...prev,
     ]);
     if (src) setStage(src.id, "Interview Scheduled");
+    addAudit({
+      actionType: "Interview Scheduled",
+      target: schedule.applicant,
+      module: "Interview Scheduling",
+      details: `${schedule.mode} interview booked for ${schedule.date} · ${schedule.time} with ${schedule.interviewer}.`,
+    });
     toast.success(`Interview confirmed for ${schedule.applicant}`, {
       description: `${schedule.date} · ${schedule.time} · ${schedule.mode}`,
     });
@@ -366,15 +489,19 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
 
   const reject = (a: Applicant) => {
     setStage(a.id, "Rejected");
+    addAudit({
+      actionType: "Applicant Rejected",
+      target: a.name,
+      module: "Screening",
+      details: `Applicant rejected at ${a.stage} stage for ${a.position}.`,
+    });
     toast(`${a.name} marked as rejected`, { description: "Regret letter queued for sending." });
   };
 
   const openRefer = (a: Applicant) => {
     setReferring(a);
     const suggested = a.flags.find((f) => f.startsWith("Stronger match:"));
-    setReferTarget(
-      suggested ? suggested.replace("Stronger match:", "").split("(")[0]!.trim() : "",
-    );
+    setReferTarget(suggested ? suggested.replace("Stronger match:", "").split("(")[0]!.trim() : "");
   };
 
   const totalWeight = criteria.reduce((t, c) => t + (c.enabled ? c.weight : 0), 0);
@@ -456,6 +583,110 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
     (a) => a.stage === "Interview Scheduled" && !assessments.some((x) => x.applicantId === a.id),
   );
 
+  const interviewFiltered = interviews
+    .filter((i) =>
+      interviewSearch ? i.applicant.toLowerCase().includes(interviewSearch.toLowerCase()) : true,
+    )
+    .filter((i) => (interviewStatusFilter === "all" ? true : i.status === interviewStatusFilter))
+    .filter((i) => (interviewModeFilter === "all" ? true : i.mode === interviewModeFilter));
+
+  const interviewSort = useSort(interviewFiltered, {
+    applicant: (i) => i.applicant,
+    position: (i) => i.position,
+    schedule: (i) => `${i.date} ${i.time}`,
+    mode: (i) => i.mode,
+    interviewer: (i) => i.interviewer,
+    status: (i) => i.status,
+  });
+
+  type AssessmentRow =
+    | { kind: "ready"; a: Applicant; iv?: (typeof interviews)[number] | undefined }
+    | { kind: "completed"; r: AssessmentResult };
+
+  const deptForPosition = (position: string) =>
+    positions.find((p) => p.title === position)?.department ?? "—";
+
+  const assessmentRowsAll: AssessmentRow[] = [
+    ...(assessmentFilter !== "completed"
+      ? readyToAssess.map((a) => ({
+          kind: "ready" as const,
+          a,
+          iv: interviews.find((i) => i.applicant === a.name),
+        }))
+      : []),
+    ...(assessmentFilter !== "ready"
+      ? assessments.map((r) => ({ kind: "completed" as const, r }))
+      : []),
+  ];
+
+  const assessmentRows = assessmentRowsAll.filter((row) => {
+    const name = row.kind === "ready" ? row.a.name : row.r.name;
+    const position = row.kind === "ready" ? row.a.position : row.r.position;
+    const dept = deptForPosition(position);
+    const outcome = row.kind === "ready" ? "Ready for Assessment" : row.r.outcome;
+    const q = assessmentSearch.trim().toLowerCase();
+    return (
+      (!q || `${name} ${position} ${dept} ${outcome}`.toLowerCase().includes(q)) &&
+      (assessmentDept === "all" || dept === assessmentDept) &&
+      (assessmentOutcome === "all" || outcome === assessmentOutcome)
+    );
+  });
+
+  const assessmentSort = useSort(assessmentRows, {
+    name: (row) => (row.kind === "ready" ? row.a.name : row.r.name),
+    position: (row) => (row.kind === "ready" ? row.a.position : row.r.position),
+    department: (row) => deptForPosition(row.kind === "ready" ? row.a.position : row.r.position),
+    score: (row) => (row.kind === "ready" ? row.a.score : row.r.total),
+    status: (row) => (row.kind === "ready" ? "Ready for Assessment" : row.r.outcome),
+    details: (row) =>
+      row.kind === "ready"
+        ? row.iv
+          ? `Interviewed ${row.iv.date} · ${row.iv.time}`
+          : "Interview not booked"
+        : `Assessed ${row.r.date} — ${row.r.remarks}`,
+  });
+
+
+  const auditFiltered = auditLog
+    .filter((e) => (auditActionFilter === "all" ? true : e.actionType === auditActionFilter))
+    .filter((e) => (auditDeptFilter === "all" ? true : e.actorDepartment === auditDeptFilter))
+    .filter((e) => (auditActorFilter === "all" ? true : e.actorName === auditActorFilter))
+    .filter((e) =>
+      auditSearch
+        ? `${e.actorName} ${e.target} ${e.actionType} ${e.module} ${e.details}`
+            .toLowerCase()
+            .includes(auditSearch.toLowerCase())
+        : true,
+    );
+
+  const auditSort = useSort(auditFiltered, {
+    timestamp: (e) => `${e.date} ${e.time}`,
+    actorName: (e) => e.actorName,
+    actorPosition: (e) => e.actorPosition,
+    actorDepartment: (e) => e.actorDepartment,
+    actionType: (e) => e.actionType,
+    target: (e) => e.target,
+    module: (e) => e.module,
+    details: (e) => e.details,
+  });
+
+  const applicantPage = usePagination(applicantSort.sorted);
+  const interviewPage = usePagination(interviewSort.sorted);
+  const assessmentPage = usePagination(assessmentSort.sorted);
+  const auditPage = usePagination(auditSort.sorted);
+
+  const auditActionTypes = Array.from(new Set(applicantAuditLog.map((e) => e.actionType))).sort();
+  const auditActors = Array.from(new Set(applicantAuditLog.map((e) => e.actorName))).sort();
+
+  const scheduleApplicants = rows.filter(
+    (a) =>
+      scheduleDept === "all" ||
+      positions.find((p) => p.title === a.position)?.department === scheduleDept,
+  );
+  const scheduleInterviewers = interviewers.filter(
+    (s) => scheduleDept === "all" || s.department === scheduleDept,
+  );
+
   return (
     <div>
       <PageHeader
@@ -480,27 +711,37 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Applicants" value={rows.length} icon={Users} tone="primary" />
-        <StatCard
-          label="Passed Screening"
-          value={rows.filter((a) => a.score >= passing).length}
-          hint={`Passing score ${passing}%`}
-          icon={CheckCircle2}
-          tone="success"
-        />
-        <StatCard
-          label="Scheduled Interviews"
-          value={interviews.filter((i) => i.status === "Scheduled").length}
-          icon={CalendarDays}
-          tone="gold"
-          onClick={() => setTab("scheduling")}
-        />
-        <StatCard
-          label="Ready to Assess"
-          value={readyToAssess.length}
-          icon={ClipboardCheck}
-        />
+      <div className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="h-full [&>*]:h-full">
+          <StatCard label="Total Applicants" value={rows.length} icon={Users} tone="primary" />
+        </div>
+        <div className="h-full [&>*]:h-full">
+          <StatCard
+            label="Passed Screening"
+            value={rows.filter((a) => a.score >= passing).length}
+            hint={`Passing score ${passing}%`}
+            icon={CheckCircle2}
+            tone="success"
+          />
+        </div>
+        <div className="h-full [&>*]:h-full">
+          <StatCard
+            label="Scheduled Interviews"
+            value={interviews.filter((i) => i.status === "Scheduled").length}
+            hint="Tap to open scheduling"
+            icon={CalendarDays}
+            tone="gold"
+            onClick={() => setTab("scheduling")}
+          />
+        </div>
+        <div className="h-full [&>*]:h-full">
+          <StatCard
+            label="Ready to Assess"
+            value={readyToAssess.length}
+            hint="Awaiting evaluation"
+            icon={ClipboardCheck}
+          />
+        </div>
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="mt-6">
@@ -508,6 +749,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
           <TabsTrigger value="ranking">Ranking &amp; Applicants</TabsTrigger>
           <TabsTrigger value="scheduling">Interview Scheduling</TabsTrigger>
           <TabsTrigger value="assessment">Assessment</TabsTrigger>
+          <TabsTrigger value="history">History &amp; Audit</TabsTrigger>
         </TabsList>
 
         {/* RANKING + TABLE */}
@@ -521,7 +763,10 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     <p className="text-xs text-muted-foreground">
                       Resume screening results — {screenedTotal} resume
                       {screenedTotal === 1 ? "" : "s"} processed
-                      {positionFilter !== "all" ? ` for ${positionFilter}` : " across all positions"}.
+                      {positionFilter !== "all"
+                        ? ` for ${positionFilter}`
+                        : " across all positions"}
+                      .
                     </p>
                   </div>
                   <Select value={positionFilter} onValueChange={setPositionFilter}>
@@ -585,7 +830,6 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     ))}
                   </div>
                 </div>
-
               </CardContent>
             </Card>
 
@@ -632,7 +876,12 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                           {a.score}%
                         </span>
                       </div>
-                      <Button size="sm" variant="outline" className="w-full" onClick={() => setReview(a)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setReview(a)}
+                      >
                         Review
                       </Button>
                     </li>
@@ -695,18 +944,67 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                 <Table className="table-fixed text-xs">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[22%]">Applicant</TableHead>
-                      <TableHead className="hidden w-[18%] md:table-cell">Contact</TableHead>
-                      <TableHead className="w-[16%]">Position</TableHead>
-                      <TableHead className="w-[11%]">Applied</TableHead>
-                      <TableHead className="w-[8%]">Score</TableHead>
-                      <TableHead className="w-[13%]">Status</TableHead>
-                      <TableHead className="w-[8%]">Stage</TableHead>
+                      <SortHead
+                        sortKey="name"
+                        sort={applicantSort.sort}
+                        onSort={applicantSort.toggle}
+                        className="w-[22%]"
+                      >
+                        Applicant
+                      </SortHead>
+                      <SortHead
+                        sortKey="contact"
+                        sort={applicantSort.sort}
+                        onSort={applicantSort.toggle}
+                        className="hidden w-[18%] md:table-cell"
+                      >
+                        Contact
+                      </SortHead>
+                      <SortHead
+                        sortKey="position"
+                        sort={applicantSort.sort}
+                        onSort={applicantSort.toggle}
+                        className="w-[16%]"
+                      >
+                        Position
+                      </SortHead>
+                      <SortHead
+                        sortKey="applied"
+                        sort={applicantSort.sort}
+                        onSort={applicantSort.toggle}
+                        className="w-[11%]"
+                      >
+                        Applied
+                      </SortHead>
+                      <SortHead
+                        sortKey="score"
+                        sort={applicantSort.sort}
+                        onSort={applicantSort.toggle}
+                        className="w-[8%]"
+                      >
+                        Score
+                      </SortHead>
+                      <SortHead
+                        sortKey="status"
+                        sort={applicantSort.sort}
+                        onSort={applicantSort.toggle}
+                        className="w-[13%]"
+                      >
+                        Status
+                      </SortHead>
+                      <SortHead
+                        sortKey="stage"
+                        sort={applicantSort.sort}
+                        onSort={applicantSort.toggle}
+                        className="w-[8%]"
+                      >
+                        Stage
+                      </SortHead>
                       <TableHead className="w-[15%] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((a) => (
+                    {applicantPage.pageItems.map((a) => (
                       <TableRow key={a.id}>
                         <TableCell className="max-w-0">
                           <div className="flex min-w-0 items-center gap-2">
@@ -732,7 +1030,10 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                         <TableCell className="max-w-0 truncate" title={a.position}>
                           {a.position}
                         </TableCell>
-                        <TableCell className="max-w-0 truncate text-muted-foreground" title={a.appliedAt}>
+                        <TableCell
+                          className="max-w-0 truncate text-muted-foreground"
+                          title={a.appliedAt}
+                        >
                           {a.appliedAt}
                         </TableCell>
                         <TableCell>
@@ -741,7 +1042,10 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                         <TableCell>
                           <Badge
                             variant="outline"
-                            className={cn("max-w-full truncate px-1.5 py-0.5", statusMeta[a.status].className)}
+                            className={cn(
+                              "max-w-full truncate px-1.5 py-0.5",
+                              statusMeta[a.status].className,
+                            )}
                             title={statusMeta[a.status].label}
                           >
                             <span
@@ -800,6 +1104,15 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     ))}
                   </TableBody>
                 </Table>
+              <TablePagination
+                page={applicantPage.page}
+                pageCount={applicantPage.pageCount}
+                from={applicantPage.from}
+                to={applicantPage.to}
+                total={applicantPage.total}
+                label="applicants"
+                onPageChange={applicantPage.setPage}
+              />
               </div>
             </CardContent>
           </Card>
@@ -807,10 +1120,10 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
 
         {/* SCHEDULING */}
         <TabsContent value="scheduling" className="mt-4 space-y-6">
-          <div className="grid items-start gap-6 xl:grid-cols-2">
+          <div className="grid items-stretch gap-6 xl:grid-cols-2">
             {/* ── Interview Calendar ─────────────────────────────── */}
-            <Card className="rounded-xl border-border/70 shadow-sm">
-              <CardContent className="p-6">
+            <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
+              <CardContent className="flex flex-1 flex-col p-6">
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
                   <div className="flex min-w-0 items-start gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -858,9 +1171,59 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   </div>
                 </div>
 
-                <p className="mt-5 font-display text-xl font-semibold">
-                  {viewMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-                </p>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="mt-5 inline-flex items-center gap-2 rounded-lg px-2 py-1 font-display text-xl font-semibold transition-colors hover:bg-muted"
+                    >
+                      {viewMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-64 space-y-3 p-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Month</Label>
+                      <Select
+                        value={String(viewMonth.getMonth())}
+                        onValueChange={(v) =>
+                          setViewMonth((m) => new Date(m.getFullYear(), Number(v), 1))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {monthNames.map((name, i) => (
+                            <SelectItem key={name} value={String(i)}>
+                              {name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Year</Label>
+                      <Select
+                        value={String(viewMonth.getFullYear())}
+                        onValueChange={(v) =>
+                          setViewMonth((m) => new Date(Number(v), m.getMonth(), 1))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {yearOptions.map((y) => (
+                            <SelectItem key={y} value={String(y)}>
+                              {y}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </PopoverContent>
+                </Popover>
 
                 <div className="mt-3 grid grid-cols-7 text-center text-[0.65rem] font-semibold tracking-wide text-muted-foreground">
                   {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((d) => (
@@ -938,7 +1301,10 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                         year: "numeric",
                       })}
                     </p>
-                    <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">
+                    <Badge
+                      variant="outline"
+                      className="border-primary/30 bg-primary/10 text-primary"
+                    >
                       {interviews.filter((i) => i.date === schedule.date).length}
                     </Badge>
                   </div>
@@ -988,8 +1354,8 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
             </Card>
 
             {/* ── Book an Interview ──────────────────────────────── */}
-            <Card className="rounded-xl border-border/70 shadow-sm">
-              <CardContent className="p-6">
+            <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
+              <CardContent className="flex flex-1 flex-col p-6">
                 <div className="flex items-start gap-3">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                     <CalendarClock className="h-5 w-5" />
@@ -1002,7 +1368,30 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   </div>
                 </div>
 
-                <div className="mt-6 space-y-6">
+                <div className="mt-6 flex-1 space-y-6">
+                  <div className="space-y-2">
+                    <Label className="text-sm">Filter by Department</Label>
+                    <Select
+                      value={scheduleDept}
+                      onValueChange={(v) => {
+                        setScheduleDept(v);
+                        setSchedule((p) => ({ ...p, applicant: "" }));
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="All departments" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All departments</SelectItem>
+                        {departments.map((d) => (
+                          <SelectItem key={d.code} value={d.name}>
+                            {d.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   <div className="space-y-2">
                     <Label className="text-sm">
                       <span className="text-primary">1.</span> Select Applicant
@@ -1015,7 +1404,12 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                         <SelectValue placeholder="Select applicant" />
                       </SelectTrigger>
                       <SelectContent>
-                        {rows.map((a) => (
+                        {scheduleApplicants.length === 0 && (
+                          <div className="px-2 py-3 text-xs text-muted-foreground">
+                            No applicants in this department.
+                          </div>
+                        )}
+                        {scheduleApplicants.map((a) => (
                           <SelectItem key={a.id} value={a.name}>
                             {a.name} — {a.position}
                           </SelectItem>
@@ -1121,7 +1515,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {interviewers.map((s) => (
+                            {scheduleInterviewers.map((s) => (
                               <SelectItem key={s.id} value={s.name}>
                                 {s.name} — {s.role}
                               </SelectItem>
@@ -1153,8 +1547,6 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
               </CardContent>
             </Card>
           </div>
-
-
 
           <Card className="border-border/70">
             <CardContent className="p-6">
@@ -1196,98 +1588,148 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Applicant</TableHead>
-                      <TableHead>Position</TableHead>
-                      <TableHead>Schedule</TableHead>
-                      <TableHead>Mode</TableHead>
-                      <TableHead>Interviewer</TableHead>
-                      <TableHead>Status</TableHead>
+                      <SortHead
+                        sortKey="applicant"
+                        sort={interviewSort.sort}
+                        onSort={interviewSort.toggle}
+                      >
+                        Applicant
+                      </SortHead>
+                      <SortHead
+                        sortKey="position"
+                        sort={interviewSort.sort}
+                        onSort={interviewSort.toggle}
+                      >
+                        Position
+                      </SortHead>
+                      <SortHead
+                        sortKey="schedule"
+                        sort={interviewSort.sort}
+                        onSort={interviewSort.toggle}
+                      >
+                        Schedule
+                      </SortHead>
+                      <SortHead
+                        sortKey="mode"
+                        sort={interviewSort.sort}
+                        onSort={interviewSort.toggle}
+                      >
+                        Mode
+                      </SortHead>
+                      <SortHead
+                        sortKey="interviewer"
+                        sort={interviewSort.sort}
+                        onSort={interviewSort.toggle}
+                      >
+                        Interviewer
+                      </SortHead>
+                      <SortHead
+                        sortKey="status"
+                        sort={interviewSort.sort}
+                        onSort={interviewSort.toggle}
+                      >
+                        Status
+                      </SortHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {interviews
-                      .filter((i) =>
-                        interviewSearch
-                          ? i.applicant.toLowerCase().includes(interviewSearch.toLowerCase())
-                          : true,
-                      )
-                      .filter((i) =>
-                        interviewStatusFilter === "all" ? true : i.status === interviewStatusFilter,
-                      )
-                      .filter((i) =>
-                        interviewModeFilter === "all" ? true : i.mode === interviewModeFilter,
-                      )
-                      .map((i) => (
-                        <TableRow key={i.id}>
-                          <TableCell className="text-sm font-medium">{i.applicant}</TableCell>
-                          <TableCell className="text-sm">{i.position}</TableCell>
-                          <TableCell className="text-xs">
-                            {i.date} · {i.time}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            <Badge variant="outline">{i.mode}</Badge>
-                          </TableCell>
-                          <TableCell className="text-xs">{i.interviewer}</TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={
-                                i.status === "Completed"
-                                  ? "border-success/30 bg-success/10 text-success"
-                                  : "border-primary/30 bg-primary/10 text-primary"
-                              }
-                            >
-                              {i.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  size="icon"
-                                  variant="outline"
-                                  aria-label={`Actions for ${i.applicant}`}
-                                >
-                                  <MoreHorizontal className="h-3.5 w-3.5" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => toast(`Viewing interview — ${i.applicant}`)}>
-                                  <Eye className="mr-2 h-3.5 w-3.5" /> View
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    setInterviews((prev) =>
-                                      prev.map((x) =>
-                                        x.id === i.id
-                                          ? {
-                                              ...x,
-                                              status: x.status === "Completed" ? "Scheduled" : "Completed",
-                                            }
-                                          : x,
-                                      ),
-                                    )
-                                  }
-                                >
-                                  <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
-                                  {i.status === "Completed" ? "Reopen" : "Mark completed"}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setInterviews((prev) => prev.filter((x) => x.id !== i.id));
-                                    toast(`Interview cancelled — ${i.applicant}`);
-                                  }}
-                                >
-                                  <XCircle className="mr-2 h-3.5 w-3.5 text-destructive" /> Cancel
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                    {interviewPage.pageItems.map((i) => (
+                      <TableRow key={i.id}>
+                        <TableCell className="text-sm font-medium">{i.applicant}</TableCell>
+                        <TableCell className="text-sm">{i.position}</TableCell>
+                        <TableCell className="text-xs">
+                          {i.date} · {i.time}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <Badge variant="outline">{i.mode}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs">{i.interviewer}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={
+                              i.status === "Completed"
+                                ? "border-success/30 bg-success/10 text-success"
+                                : "border-primary/30 bg-primary/10 text-primary"
+                            }
+                          >
+                            {i.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                aria-label={`Actions for ${i.applicant}`}
+                              >
+                                <MoreHorizontal className="h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => toast(`Viewing interview — ${i.applicant}`)}
+                              >
+                                <Eye className="mr-2 h-3.5 w-3.5" /> View
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  const nextStatus =
+                                    i.status === "Completed" ? "Scheduled" : "Completed";
+                                  setInterviews((prev) =>
+                                    prev.map((x) =>
+                                      x.id === i.id ? { ...x, status: nextStatus } : x,
+                                    ),
+                                  );
+                                  addAudit({
+                                    actionType:
+                                      nextStatus === "Completed"
+                                        ? "Interview Completed"
+                                        : "Status Change",
+                                    target: i.applicant,
+                                    module: "Interview Scheduling",
+                                    details:
+                                      nextStatus === "Completed"
+                                        ? `Interview on ${i.date} marked complete.`
+                                        : `Interview reopened to Scheduled status.`,
+                                  });
+                                }}
+                              >
+                                <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
+                                {i.status === "Completed" ? "Reopen" : "Mark completed"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setInterviews((prev) => prev.filter((x) => x.id !== i.id));
+                                  addAudit({
+                                    actionType: "Interview Cancelled",
+                                    target: i.applicant,
+                                    module: "Interview Scheduling",
+                                    details: `Interview on ${i.date} · ${i.time} cancelled.`,
+                                  });
+                                  toast(`Interview cancelled — ${i.applicant}`);
+                                }}
+                              >
+                                <XCircle className="mr-2 h-3.5 w-3.5 text-destructive" /> Cancel
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
+              <TablePagination
+                page={interviewPage.page}
+                pageCount={interviewPage.pageCount}
+                from={interviewPage.from}
+                to={interviewPage.to}
+                total={interviewPage.total}
+                label="interviews"
+                onPageChange={interviewPage.setPage}
+              />
               </div>
             </CardContent>
           </Card>
@@ -1304,134 +1746,408 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     Candidates ready for evaluation and those already assessed.
                   </p>
                 </div>
-                <Select
-                  value={assessmentFilter}
-                  onValueChange={(v) => setAssessmentFilter(v as typeof assessmentFilter)}
-                >
-                  <SelectTrigger className="w-56">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ready">Ready for Assessment</SelectItem>
-                    <SelectItem value="completed">Completed Assessment</SelectItem>
-                    <SelectItem value="all">All Assessments</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={assessmentSearch}
+                      onChange={(e) => setAssessmentSearch(e.target.value)}
+                      placeholder="Search candidate, position…"
+                      className="w-56 pl-8"
+                    />
+                  </div>
+                  <Select
+                    value={assessmentFilter}
+                    onValueChange={(v) => setAssessmentFilter(v as typeof assessmentFilter)}
+                  >
+                    <SelectTrigger className="w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ready">Ready for Assessment</SelectItem>
+                      <SelectItem value="completed">Completed Assessment</SelectItem>
+                      <SelectItem value="all">All Assessments</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={assessmentDept} onValueChange={setAssessmentDept}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All departments</SelectItem>
+                      {departments.map((d) => (
+                        <SelectItem key={d.code} value={d.name}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={assessmentOutcome} onValueChange={setAssessmentOutcome}>
+                    <SelectTrigger className="w-44">
+                      <SelectValue placeholder="Outcome" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All outcomes</SelectItem>
+                      <SelectItem value="Ready for Assessment">Ready for Assessment</SelectItem>
+                      <SelectItem value="Recommended">Recommended</SelectItem>
+                      <SelectItem value="Hold">Hold</SelectItem>
+                      <SelectItem value="Not Recommended">Not Recommended</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="mt-4">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Candidate</TableHead>
-                      <TableHead>Position</TableHead>
-                      <TableHead>Score</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Details</TableHead>
+                      <SortHead sortKey="name" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                        Candidate
+                      </SortHead>
+                      <SortHead sortKey="position" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                        Position
+                      </SortHead>
+                      <SortHead sortKey="department" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                        Department
+                      </SortHead>
+                      <SortHead sortKey="score" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                        Score
+                      </SortHead>
+                      <SortHead sortKey="status" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                        Status
+                      </SortHead>
+                      <SortHead sortKey="details" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                        Details
+                      </SortHead>
                       <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {assessmentFilter !== "completed" &&
-                      readyToAssess.map((a) => {
-                        const iv = interviews.find((i) => i.applicant === a.name);
-                        return (
-                          <TableRow key={a.id}>
-                            <TableCell className="text-sm font-medium">{a.name}</TableCell>
-                            <TableCell className="text-sm">{a.position}</TableCell>
-                            <TableCell>{a.score}%</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="border-gold/40 bg-gold/15 text-gold-foreground">
-                                Ready for Assessment
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {iv ? `Interviewed ${iv.date} · ${iv.time}` : "Interview not booked"}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                size="sm"
-                                onClick={() => {
-                                  setEvaluating(a);
-                                  setEvalScores(
-                                    Object.fromEntries(assessmentCriteria.map((c) => [c, 4])),
-                                  );
-                                  setEvalRemarks("");
-                                }}
-                              >
-                                Start assessment
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    {assessmentFilter !== "ready" &&
-                      assessments.map((a) => (
-                        <TableRow key={a.applicantId}>
-                          <TableCell className="text-sm font-medium">{a.name}</TableCell>
-                          <TableCell className="text-sm">{a.position}</TableCell>
+                    {assessmentPage.pageItems.map((row) =>
+                      row.kind === "ready" ? (
+                        <TableRow key={`ready-${row.a.id}`}>
+                          <TableCell className="text-sm font-medium">{row.a.name}</TableCell>
+                          <TableCell className="text-sm">{row.a.position}</TableCell>
+                          <TableCell className="text-sm">{deptForPosition(row.a.position)}</TableCell>
+                          <TableCell>{row.a.score}%</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className="border-gold/40 bg-gold/15 text-gold-foreground"
+                            >
+                              Ready for Assessment
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {row.iv
+                              ? `Interviewed ${row.iv.date} · ${row.iv.time}`
+                              : "Interview not booked"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              disabled={!row.iv || row.iv.date > TODAY_ISO}
+                              title={
+                                !row.iv
+                                  ? "Interview not booked yet"
+                                  : row.iv.date > TODAY_ISO
+                                    ? `Available on ${row.iv.date}`
+                                    : "Start assessment"
+                              }
+                              onClick={() => {
+                                setEvaluating(row.a);
+                                setEvalScores(
+                                  Object.fromEntries(assessmentCriteria.map((c) => [c, 4])),
+                                );
+                                setEvalRemarks("");
+                              }}
+                            >
+                              Start assessment
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        <TableRow key={`done-${row.r.applicantId}`}>
+                          <TableCell className="text-sm font-medium">{row.r.name}</TableCell>
+                          <TableCell className="text-sm">{row.r.position}</TableCell>
+                          <TableCell className="text-sm">{deptForPosition(row.r.position)}</TableCell>
                           <TableCell>
                             <span className="font-display text-lg font-semibold text-primary">
-                              {a.total}%
+                              {row.r.total}%
                             </span>
                           </TableCell>
                           <TableCell>
                             <Badge
                               variant="outline"
                               className={
-                                a.outcome === "Recommended"
+                                row.r.outcome === "Recommended"
                                   ? "border-success/30 bg-success/15 text-success"
-                                  : a.outcome === "Hold"
+                                  : row.r.outcome === "Hold"
                                     ? "border-warning/40 bg-warning/20 text-warning-foreground"
                                     : "border-destructive/30 bg-destructive/10 text-destructive"
                               }
                             >
-                              {a.outcome}
+                              {row.r.outcome}
                             </Badge>
                           </TableCell>
-                          <TableCell className="max-w-[260px] truncate text-xs text-muted-foreground" title={a.remarks}>
-                            Assessed {a.date} — {a.remarks}
+                          <TableCell
+                            className="max-w-[260px] truncate text-xs text-muted-foreground"
+                            title={row.r.remarks}
+                          >
+                            Assessed {row.r.date} — {row.r.remarks}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setStage(a.applicantId, "Offer");
-                                toast.success(`${a.name} advanced to job offer`);
-                              }}
-                            >
-                              Advance to offer
-                            </Button>
+                            <div className="flex justify-end gap-2">
+                              <Button size="sm" onClick={() => acceptAssessment(row.r)}>
+                                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Accept
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                onClick={() => {
+                                  setStage(row.r.applicantId, "Rejected");
+                                  addAudit({
+                                    actionType: "Assessment Rejected",
+                                    target: row.r.name,
+                                    module: "Applicant Management",
+                                    details: `Rejected after assessment (${row.r.total}%)`,
+                                  });
+                                  toast.success(`${row.r.name} rejected after assessment`);
+                                }}
+                              >
+                                <XCircle className="mr-1.5 h-3.5 w-3.5" /> Reject
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
-                      ))}
-                    {((assessmentFilter === "ready" && readyToAssess.length === 0) ||
-                      (assessmentFilter === "completed" && assessments.length === 0) ||
-                      (assessmentFilter === "all" &&
-                        readyToAssess.length === 0 &&
-                        assessments.length === 0)) && (
+                      ),
+                    )}
+                    {assessmentSort.sorted.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-sm text-muted-foreground">
+                        <TableCell colSpan={7} className="text-sm text-muted-foreground">
                           Nothing to show for this filter yet.
                         </TableCell>
                       </TableRow>
                     )}
                   </TableBody>
+
                 </Table>
+              <TablePagination
+                page={assessmentPage.page}
+                pageCount={assessmentPage.pageCount}
+                from={assessmentPage.from}
+                to={assessmentPage.to}
+                total={assessmentPage.total}
+                label="assessments"
+                onPageChange={assessmentPage.setPage}
+              />
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* HISTORY & AUDIT */}
+        <TabsContent value="history" className="mt-4 space-y-6">
+          <Card className="border-border/70">
+            <CardContent className="p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="flex items-center gap-2 font-display text-2xl font-semibold">
+                    <History className="h-5 w-5 text-primary" /> History &amp; Audit
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Complete trail of applicant activity — screening, transfers, interview booking,
+                    completion and cancellation, assessments and hiring decisions.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={auditSearch}
+                      onChange={(e) => setAuditSearch(e.target.value)}
+                      placeholder="Search activity…"
+                      className="w-56 pl-8"
+                    />
+                  </div>
+                  <Select value={auditActionFilter} onValueChange={setAuditActionFilter}>
+                    <SelectTrigger className="w-44">
+                      <SelectValue placeholder="Action" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All actions</SelectItem>
+                      {auditActionTypes.map((a) => (
+                        <SelectItem key={a} value={a}>
+                          {a}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={auditDeptFilter} onValueChange={setAuditDeptFilter}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All departments</SelectItem>
+                      {departments.map((d) => (
+                        <SelectItem key={d.code} value={d.name}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+
+                    </SelectContent>
+                  </Select>
+                  <Select value={auditActorFilter} onValueChange={setAuditActorFilter}>
+                    <SelectTrigger className="w-44">
+                      <SelectValue placeholder="Actor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All users</SelectItem>
+                      {auditActors.map((a) => (
+                        <SelectItem key={a} value={a}>
+                          {a}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {(auditSearch ||
+                    auditActionFilter !== "all" ||
+                    auditDeptFilter !== "all" ||
+                    auditActorFilter !== "all") && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setAuditSearch("");
+                        setAuditActionFilter("all");
+                        setAuditDeptFilter("all");
+                        setAuditActorFilter("all");
+                      }}
+                    >
+                      Reset
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 overflow-x-auto rounded-md border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-secondary/40">
+                      <SortHead
+                        sortKey="timestamp"
+                        sort={auditSort.sort}
+                        onSort={auditSort.toggle}
+                        className="whitespace-nowrap"
+                      >
+                        Date &amp; time
+                      </SortHead>
+                      <SortHead sortKey="actorName" sort={auditSort.sort} onSort={auditSort.toggle}>
+                        Performed by
+                      </SortHead>
+                      <SortHead
+                        sortKey="actorPosition"
+                        sort={auditSort.sort}
+                        onSort={auditSort.toggle}
+                      >
+                        Position
+                      </SortHead>
+                      <SortHead
+                        sortKey="actorDepartment"
+                        sort={auditSort.sort}
+                        onSort={auditSort.toggle}
+                      >
+                        Department
+                      </SortHead>
+                      <SortHead
+                        sortKey="actionType"
+                        sort={auditSort.sort}
+                        onSort={auditSort.toggle}
+                      >
+                        Action
+                      </SortHead>
+                      <SortHead sortKey="target" sort={auditSort.sort} onSort={auditSort.toggle}>
+                        Applicant
+                      </SortHead>
+                      <SortHead sortKey="module" sort={auditSort.sort} onSort={auditSort.toggle}>
+                        Module
+                      </SortHead>
+                      <SortHead sortKey="details" sort={auditSort.sort} onSort={auditSort.toggle}>
+                        Details
+                      </SortHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {auditPage.pageItems.map((e) => (
+                      <TableRow key={e.id}>
+                        <TableCell className="whitespace-nowrap text-xs">
+                          <span className="font-medium">{e.date}</span>
+                          <span className="block text-muted-foreground">{e.time}</span>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm font-medium">
+                          {e.actorName}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {e.actorPosition}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {e.actorDepartment}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <Badge variant="outline" className={auditBadgeClass(e.actionType)}>
+                            {e.actionType}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">{e.target}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {e.module}
+                        </TableCell>
+                        <TableCell className="min-w-[18rem] text-xs text-muted-foreground">
+                          {e.details}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {auditSort.sorted.length === 0 && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={8}
+                          className="py-10 text-center text-sm text-muted-foreground"
+                        >
+                          No activity matches your filters.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              <TablePagination
+                page={auditPage.page}
+                pageCount={auditPage.pageCount}
+                from={auditPage.from}
+                to={auditPage.to}
+                total={auditPage.total}
+                label="log entries"
+                onPageChange={auditPage.setPage}
+              />
+              </div>
+
+              <p className="mt-3 text-xs text-muted-foreground">
+                Showing {auditSort.sorted.length} of {auditLog.length} recorded activities.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
 
       {/* REPORTS DIALOG */}
       <Dialog open={reportsOpen} onOpenChange={setReportsOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-display text-2xl">Generate Report</DialogTitle>
-            <DialogDescription>Choose a report to generate from current applicant data.</DialogDescription>
+            <DialogDescription>
+              Choose a report to generate from current applicant data.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             {reportOptions.map((r) => (
@@ -1538,7 +2254,8 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     Skill &amp; Certification Keywords
                   </h2>
                   <p className="text-xs text-muted-foreground">
-                    Pick a job position to load its suggested keyword checklist, then add any extras.
+                    Pick a job position to load its suggested keyword checklist, then add any
+                    extras.
                   </p>
                 </div>
 
@@ -1576,11 +2293,13 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                 <div className="space-y-2">
                   <Label>Entity labels captured</Label>
                   <div className="flex flex-wrap gap-2">
-                    {["PERSON", "EMAIL", "PHONE", "SKILL", "ORG", "EDU", "CERT", "DATE"].map((l) => (
-                      <Badge key={l} variant="secondary">
-                        {l}
-                      </Badge>
-                    ))}
+                    {["PERSON", "EMAIL", "PHONE", "SKILL", "ORG", "EDU", "CERT", "DATE"].map(
+                      (l) => (
+                        <Badge key={l} variant="secondary">
+                          {l}
+                        </Badge>
+                      ),
+                    )}
                   </div>
                 </div>
 
@@ -1622,7 +2341,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
         </DialogContent>
       </Dialog>
 
-            {/* REVIEW DIALOG — resume screening result */}
+      {/* REVIEW DIALOG — resume screening result */}
       <Dialog open={!!review} onOpenChange={(o) => !o && setReview(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
           {review && (
@@ -1663,18 +2382,24 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                         </p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[0.6rem] font-semibold uppercase text-primary">Objective</p>
+                        <p className="text-[0.6rem] font-semibold uppercase text-primary">
+                          Objective
+                        </p>
                         <div className="h-1.5 w-full rounded-full bg-muted" />
                         <div className="h-1.5 w-4/5 rounded-full bg-muted" />
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[0.6rem] font-semibold uppercase text-primary">Experience</p>
+                        <p className="text-[0.6rem] font-semibold uppercase text-primary">
+                          Experience
+                        </p>
                         <div className="h-1.5 w-full rounded-full bg-muted" />
                         <div className="h-1.5 w-full rounded-full bg-muted" />
                         <div className="h-1.5 w-3/4 rounded-full bg-muted" />
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[0.6rem] font-semibold uppercase text-primary">Education</p>
+                        <p className="text-[0.6rem] font-semibold uppercase text-primary">
+                          Education
+                        </p>
                         <div className="h-1.5 w-full rounded-full bg-muted" />
                         <div className="h-1.5 w-2/3 rounded-full bg-muted" />
                       </div>
@@ -1700,161 +2425,168 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                 </div>
 
                 <div className="space-y-4">
-                {(() => {
-                  const verdictCopy: Record<string, string> = {
-                    fit: "Strong match — meets or exceeds the requirements for this role.",
-                    "other-role": "Not the strongest fit here, but the profile suggests they'd do well in a different role.",
-                    credential: "Promising profile, but a required certification or credential couldn't be verified.",
-                    "not-fit": "Falls short of the core requirements for this role.",
-                  };
-                  const passed = review.score >= passing;
-                  const matched = (keywordLibrary[review.position] ?? []).filter((k) =>
-                    review.entities.some((e) =>
-                      e.value.toLowerCase().includes(k.toLowerCase().split(" ")[0]!),
-                    ),
-                  );
-                  const missing = (keywordLibrary[review.position] ?? []).filter(
-                    (k) => !matched.includes(k),
-                  );
-                  const experience = review.entities.filter((e) => e.label === "ORG");
-                  const education = review.entities.filter((e) => e.label === "EDU");
-                  const skills = review.entities.filter((e) => e.label === "SKILL");
+                  {(() => {
+                    const verdictCopy: Record<string, string> = {
+                      fit: "Strong match — meets or exceeds the requirements for this role.",
+                      "other-role":
+                        "Not the strongest fit here, but the profile suggests they'd do well in a different role.",
+                      credential:
+                        "Promising profile, but a required certification or credential couldn't be verified.",
+                      "not-fit": "Falls short of the core requirements for this role.",
+                    };
+                    const passed = review.score >= passing;
+                    const matched = (keywordLibrary[review.position] ?? []).filter((k) =>
+                      review.entities.some((e) =>
+                        e.value.toLowerCase().includes(k.toLowerCase().split(" ")[0]!),
+                      ),
+                    );
+                    const missing = (keywordLibrary[review.position] ?? []).filter(
+                      (k) => !matched.includes(k),
+                    );
+                    const experience = review.entities.filter((e) => e.label === "ORG");
+                    const education = review.entities.filter((e) => e.label === "EDU");
+                    const skills = review.entities.filter((e) => e.label === "SKILL");
 
-                  return (
-                    <>
-                      {/* Score + verdict */}
-                      <div className="flex items-center gap-4 rounded-md border border-border p-4">
-                        <div className="text-center">
-                          <p className="font-display text-4xl font-semibold text-primary">
-                            {review.score}%
-                          </p>
-                          <p className="eyebrow">Match score</p>
-                        </div>
-                        <div className="flex-1 space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="outline" className={statusMeta[review.status].className}>
-                              {statusMeta[review.status].label}
-                            </Badge>
-                            <Badge
-                              variant="outline"
-                              className={
-                                passed
-                                  ? "border-success/30 bg-success/10 text-success"
-                                  : "border-destructive/30 bg-destructive/10 text-destructive"
-                              }
-                            >
-                              {passed ? "Passed threshold" : "Below threshold"}
-                            </Badge>
+                    return (
+                      <>
+                        {/* Score + verdict */}
+                        <div className="flex items-center gap-4 rounded-md border border-border p-4">
+                          <div className="text-center">
+                            <p className="font-display text-4xl font-semibold text-primary">
+                              {review.score}%
+                            </p>
+                            <p className="eyebrow">Match score</p>
                           </div>
-                          <p className="text-sm text-muted-foreground">
-                            {verdictCopy[review.status]}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Keyword match */}
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-md border border-success/30 bg-success/5 p-3">
-                          <p className="eyebrow mb-2 text-success">
-                            Matched keywords ({matched.length})
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {matched.length === 0 && (
-                              <span className="text-xs text-muted-foreground">None found</span>
-                            )}
-                            {matched.map((k) => (
+                          <div className="flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
                               <Badge
-                                key={k}
                                 variant="outline"
-                                className="border-success/30 bg-success/10 text-success"
+                                className={statusMeta[review.status].className}
                               >
-                                ✓ {k}
+                                {statusMeta[review.status].label}
                               </Badge>
-                            ))}
+                              <Badge
+                                variant="outline"
+                                className={
+                                  passed
+                                    ? "border-success/30 bg-success/10 text-success"
+                                    : "border-destructive/30 bg-destructive/10 text-destructive"
+                                }
+                              >
+                                {passed ? "Passed threshold" : "Below threshold"}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {verdictCopy[review.status]}
+                            </p>
                           </div>
                         </div>
-                        <div className="rounded-md border border-border p-3">
-                          <p className="eyebrow mb-2 text-muted-foreground">
-                            Missing keywords ({missing.length})
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {missing.length === 0 && (
-                              <span className="text-xs text-muted-foreground">
-                                All keywords covered
-                              </span>
-                            )}
-                            {missing.map((k) => (
-                              <Badge key={k} variant="outline" className="text-muted-foreground">
-                                ✕ {k}
-                              </Badge>
-                            ))}
+
+                        {/* Keyword match */}
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-md border border-success/30 bg-success/5 p-3">
+                            <p className="eyebrow mb-2 text-success">
+                              Matched keywords ({matched.length})
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {matched.length === 0 && (
+                                <span className="text-xs text-muted-foreground">None found</span>
+                              )}
+                              {matched.map((k) => (
+                                <Badge
+                                  key={k}
+                                  variant="outline"
+                                  className="border-success/30 bg-success/10 text-success"
+                                >
+                                  ✓ {k}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="rounded-md border border-border p-3">
+                            <p className="eyebrow mb-2 text-muted-foreground">
+                              Missing keywords ({missing.length})
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {missing.length === 0 && (
+                                <span className="text-xs text-muted-foreground">
+                                  All keywords covered
+                                </span>
+                              )}
+                              {missing.map((k) => (
+                                <Badge key={k} variant="outline" className="text-muted-foreground">
+                                  ✕ {k}
+                                </Badge>
+                              ))}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Compact summary rows */}
-                      <div className="divide-y divide-border rounded-md border border-border">
-                        <div className="flex items-start justify-between gap-3 p-3">
-                          <p className="w-32 shrink-0 text-xs font-medium text-muted-foreground">
-                            Work experience
-                          </p>
-                          <p className="flex-1 text-sm">
-                            {experience.length > 0
-                              ? experience.map((e) => e.value).join(", ")
-                              : "No employer history detected"}
-                          </p>
+                        {/* Compact summary rows */}
+                        <div className="divide-y divide-border rounded-md border border-border">
+                          <div className="flex items-start justify-between gap-3 p-3">
+                            <p className="w-32 shrink-0 text-xs font-medium text-muted-foreground">
+                              Work experience
+                            </p>
+                            <p className="flex-1 text-sm">
+                              {experience.length > 0
+                                ? experience.map((e) => e.value).join(", ")
+                                : "No employer history detected"}
+                            </p>
+                          </div>
+                          <div className="flex items-start justify-between gap-3 p-3">
+                            <p className="w-32 shrink-0 text-xs font-medium text-muted-foreground">
+                              Education
+                            </p>
+                            <p className="flex-1 text-sm">
+                              {education.length > 0
+                                ? education.map((e) => e.value).join(", ")
+                                : "Not specified"}
+                            </p>
+                          </div>
+                          <div className="flex items-start justify-between gap-3 p-3">
+                            <p className="w-32 shrink-0 text-xs font-medium text-muted-foreground">
+                              Key skills
+                            </p>
+                            <p className="flex-1 text-sm">
+                              {skills.length > 0
+                                ? skills.map((s) => s.value).join(", ")
+                                : "None listed"}
+                            </p>
+                          </div>
+                          <div className="flex items-start justify-between gap-3 p-3">
+                            <p className="w-32 shrink-0 text-xs font-medium text-muted-foreground">
+                              Red flags
+                            </p>
+                            <p
+                              className={cn(
+                                "flex-1 text-sm",
+                                review.flags.length > 0 ? "text-caution" : "text-muted-foreground",
+                              )}
+                            >
+                              {review.flags.length > 0 ? review.flags.join(" · ") : "None detected"}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex items-start justify-between gap-3 p-3">
-                          <p className="w-32 shrink-0 text-xs font-medium text-muted-foreground">
-                            Education
-                          </p>
-                          <p className="flex-1 text-sm">
-                            {education.length > 0
-                              ? education.map((e) => e.value).join(", ")
-                              : "Not specified"}
-                          </p>
-                        </div>
-                        <div className="flex items-start justify-between gap-3 p-3">
-                          <p className="w-32 shrink-0 text-xs font-medium text-muted-foreground">
-                            Key skills
-                          </p>
-                          <p className="flex-1 text-sm">
-                            {skills.length > 0 ? skills.map((s) => s.value).join(", ") : "None listed"}
-                          </p>
-                        </div>
-                        <div className="flex items-start justify-between gap-3 p-3">
-                          <p className="w-32 shrink-0 text-xs font-medium text-muted-foreground">
-                            Red flags
-                          </p>
-                          <p
-                            className={cn(
-                              "flex-1 text-sm",
-                              review.flags.length > 0 ? "text-caution" : "text-muted-foreground",
-                            )}
-                          >
-                            {review.flags.length > 0 ? review.flags.join(" · ") : "None detected"}
-                          </p>
-                        </div>
-                      </div>
 
-                      {/* Recommendation */}
-                      <div
-                        className={cn(
-                          "rounded-md border p-3 text-sm",
-                          passed
-                            ? "border-success/30 bg-success/10 text-success"
-                            : "border-destructive/30 bg-destructive/10 text-destructive",
-                        )}
-                      >
-                        <p className="font-medium">
-                          {passed
-                            ? "Recommendation: Move forward — accept and schedule an interview."
-                            : "Recommendation: Reject or refer to a better-matching role."}
-                        </p>
-                      </div>
-                    </>
-                  );
-                })()}
+                        {/* Recommendation */}
+                        <div
+                          className={cn(
+                            "rounded-md border p-3 text-sm",
+                            passed
+                              ? "border-success/30 bg-success/10 text-success"
+                              : "border-destructive/30 bg-destructive/10 text-destructive",
+                          )}
+                        >
+                          <p className="font-medium">
+                            {passed
+                              ? "Recommendation: Move forward — accept and schedule an interview."
+                              : "Recommendation: Reject or refer to a better-matching role."}
+                          </p>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -1938,6 +2670,12 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                           : x,
                       ),
                     );
+                    addAudit({
+                      actionType: "Applicant Transferred",
+                      target: referring.name,
+                      module: "Screening",
+                      details: `Transferred from ${referring.position} to ${referTarget}.`,
+                    });
                     toast.success(`${referring.name} referred to ${referTarget}`);
                     setReferring(null);
                     setReview(null);
@@ -2027,6 +2765,12 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                       ...prev,
                     ]);
                     setStage(evaluating.id, "Assessed");
+                    addAudit({
+                      actionType: "Assessment Completed",
+                      target: evaluating.name,
+                      module: "Applicant Management",
+                      details: `Assessment saved with a total score of ${total}%`,
+                    });
                     setEvaluating(null);
                     toast.success(`Assessment saved — ${total}%`);
                   }}
@@ -2065,22 +2809,20 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
 
           {addStep === 1 && (
             <div className="space-y-3">
-              {(
-                [
-                  {
-                    id: "file" as const,
-                    icon: FileText,
-                    title: "Through file",
-                    body: "PDF or DOCX resume — text is parsed directly by the NER model.",
-                  },
-                  {
-                    id: "image" as const,
-                    icon: ImageIcon,
-                    title: "Through image",
-                    body: "Photo or scan of a walk-in resume — OCR first, then NER screening.",
-                  },
-                ]
-              ).map((m) => (
+              {[
+                {
+                  id: "file" as const,
+                  icon: FileText,
+                  title: "Through file",
+                  body: "PDF or DOCX resume — text is parsed directly by the NER model.",
+                },
+                {
+                  id: "image" as const,
+                  icon: ImageIcon,
+                  title: "Through image",
+                  body: "Photo or scan of a walk-in resume — OCR first, then NER screening.",
+                },
+              ].map((m) => (
                 <button
                   key={m.id}
                   type="button"
@@ -2133,7 +2875,8 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   <FileText className="h-9 w-9 text-muted-foreground" />
                 )}
                 <span className="mt-3 text-sm font-medium">
-                  {addFileName || `Choose resume ${addMethod === "image" ? "photo / scan" : "file"}`}
+                  {addFileName ||
+                    `Choose resume ${addMethod === "image" ? "photo / scan" : "file"}`}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {addMethod === "image" ? "JPG or PNG up to 10 MB" : "PDF or DOCX up to 10 MB"}

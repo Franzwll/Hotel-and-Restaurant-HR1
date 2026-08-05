@@ -12,6 +12,8 @@ import {
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/portal/PageHeader";
+import { TablePagination } from "@/components/ui/table-pagination";
+import { usePagination } from "@/hooks/usePagination";
 import { StatCard } from "@/components/portal/StatCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,9 +48,14 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { essRequests as seed, requestCategories, type ESSRequest } from "@/data/ess";
+import {
+  essRequests as seed,
+  requestCategories,
+  essActivityLog,
+  type ESSRequest,
+} from "@/data/ess";
 import { departments, employees } from "@/data/hr";
-import { auditLogs } from "@/data/users";
+import { useSort, SortHead } from "@/components/portal/sortable";
 
 type Status = ESSRequest["status"] | "Returned for Clarification";
 type Row = Omit<ESSRequest, "status" | "note"> & {
@@ -92,18 +99,78 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
   const [reportsOpen, setReportsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
+  const [behalfDept, setBehalfDept] = useState("all");
 
   const filtered = rows.filter((r) => {
     if (dept !== "all" && r.department !== dept) return false;
     if (status !== "all" && r.status !== status) return false;
     if (category !== "all" && r.category !== category) return false;
+    if (search && !`${r.employee} ${r.type} ${r.id}`.toLowerCase().includes(search.toLowerCase()))
+      return false;
+    return true;
+  });
+
+  const behalfEmployees = employees.filter(
+    (e) => behalfDept === "all" || e.department === behalfDept,
+  );
+
+  type RowKey =
+    "id" | "employee" | "department" | "category" | "type" | "filed" | "assignedTo" | "status";
+
+  const {
+    sort: rowSort,
+    toggle: toggleRowSort,
+    sorted: sortedFiltered,
+  } = useSort<Row, RowKey>(filtered, {
+    id: (r) => r.id,
+    employee: (r) => r.employee,
+    department: (r) => r.department,
+    category: (r) => r.category,
+    type: (r) => r.type,
+    filed: (r) => r.filed,
+    assignedTo: (r) => r.assignedTo,
+    status: (r) => r.status,
+  });
+
+  const [logModule, setLogModule] = useState("all");
+  const [logDept, setLogDept] = useState("all");
+  const [logCategory, setLogCategory] = useState("all");
+  const [logSearch, setLogSearch] = useState("");
+
+  const logModules = Array.from(new Set(essActivityLog.map((l) => l.module)));
+  const logCategories = Array.from(new Set(essActivityLog.map((l) => l.category)));
+
+  const filteredLogs = essActivityLog.filter((l) => {
+    if (logModule !== "all" && l.module !== logModule) return false;
+    if (logDept !== "all" && l.department !== logDept) return false;
+    if (logCategory !== "all" && l.category !== logCategory) return false;
     if (
-      search &&
-      !`${r.employee} ${r.type} ${r.id}`.toLowerCase().includes(search.toLowerCase())
+      logSearch &&
+      !`${l.user} ${l.action} ${l.requestId}`.toLowerCase().includes(logSearch.toLowerCase())
     )
       return false;
     return true;
   });
+
+  type LogKey =
+    "timestamp" | "user" | "action" | "module" | "category" | "department" | "requestId";
+
+  const {
+    sort: logSort,
+    toggle: toggleLogSort,
+    sorted: sortedLogs,
+  } = useSort<(typeof essActivityLog)[number], LogKey>(filteredLogs, {
+    timestamp: (l) => l.timestamp,
+    user: (l) => l.user,
+    action: (l) => l.action,
+    module: (l) => l.module,
+    category: (l) => l.category,
+    department: (l) => l.department,
+    requestId: (l) => l.requestId,
+  });
+
+  const requestPage = usePagination(sortedFiltered);
+  const logPage = usePagination(sortedLogs);
 
   const setReqStatus = (id: string, s: Status, note?: string | undefined) =>
     setRows((prev) =>
@@ -114,9 +181,7 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
               status: s,
               note,
               returnedCount:
-                s === "Returned for Clarification"
-                  ? (r.returnedCount ?? 0) + 1
-                  : r.returnedCount,
+                s === "Returned for Clarification" ? (r.returnedCount ?? 0) + 1 : r.returnedCount,
             }
           : r,
       ),
@@ -135,7 +200,9 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
   // Opening a review takes ownership: Pending auto-promotes to Under Review.
   const openReview = (id: string) => {
     setRows((prev) =>
-      prev.map((r) => (r.id === id && r.status === "Pending" ? { ...r, status: "Under Review" } : r)),
+      prev.map((r) =>
+        r.id === id && r.status === "Pending" ? { ...r, status: "Under Review" } : r,
+      ),
     );
     setReviewId(id);
     setReviewDecision("Approved");
@@ -147,7 +214,9 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
   const employeeReplied = (id: string) => {
     setRows((prev) =>
       prev.map((r) =>
-        r.id === id ? { ...r, status: "Under Review", note: "Employee submitted clarification" } : r,
+        r.id === id
+          ? { ...r, status: "Under Review", note: "Employee submitted clarification" }
+          : r,
       ),
     );
     toast.success(`${id} returned to review queue`);
@@ -234,7 +303,6 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
         />
       </div>
 
-
       <Tabs defaultValue="requests" className="mt-6">
         <TabsList className="flex h-auto flex-wrap justify-start">
           <TabsTrigger value="requests">Request Queue</TabsTrigger>
@@ -308,7 +376,7 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                     <>
                       <Button
                         size="sm"
-                        variant="outline"
+                        className="bg-success text-success-foreground shadow hover:bg-success/90"
                         disabled={selected.length === 0}
                         onClick={() => bulk("Approved")}
                       >
@@ -316,7 +384,7 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                       </Button>
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant="destructive"
                         disabled={selected.length === 0}
                         onClick={() => bulk("Rejected")}
                       >
@@ -339,13 +407,29 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                       </DialogHeader>
                       <div className="space-y-3">
                         <div className="space-y-2">
+                          <Label>Department</Label>
+                          <Select value={behalfDept} onValueChange={setBehalfDept}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="All departments" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All departments</SelectItem>
+                              {departments.map((d) => (
+                                <SelectItem key={d.code} value={d.name}>
+                                  {d.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
                           <Label>Employee</Label>
                           <Select>
                             <SelectTrigger>
                               <SelectValue placeholder="Select employee" />
                             </SelectTrigger>
                             <SelectContent>
-                              {employees.map((e) => (
+                              {behalfEmployees.map((e) => (
                                 <SelectItem key={e.id} value={e.id}>
                                   {e.name} — {e.department}
                                 </SelectItem>
@@ -374,7 +458,9 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button onClick={() => toast.success("Request filed on behalf of employee")}>
+                        <Button
+                          onClick={() => toast.success("Request filed on behalf of employee")}
+                        >
                           File request
                         </Button>
                       </DialogFooter>
@@ -388,17 +474,29 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                   <TableHeader>
                     <TableRow>
                       {role === "superadmin" && <TableHead className="w-10" />}
-                      <TableHead>Request</TableHead>
-                      <TableHead>Employee</TableHead>
-                      <TableHead>Category / Type</TableHead>
-                      <TableHead>Filed</TableHead>
-                      <TableHead>Assigned To</TableHead>
-                      <TableHead>Status</TableHead>
+                      <SortHead sortKey="id" sort={rowSort} onSort={toggleRowSort}>
+                        Request
+                      </SortHead>
+                      <SortHead sortKey="employee" sort={rowSort} onSort={toggleRowSort}>
+                        Employee
+                      </SortHead>
+                      <SortHead sortKey="type" sort={rowSort} onSort={toggleRowSort}>
+                        Category / Type
+                      </SortHead>
+                      <SortHead sortKey="filed" sort={rowSort} onSort={toggleRowSort}>
+                        Filed
+                      </SortHead>
+                      <SortHead sortKey="assignedTo" sort={rowSort} onSort={toggleRowSort}>
+                        Assigned To
+                      </SortHead>
+                      <SortHead sortKey="status" sort={rowSort} onSort={toggleRowSort}>
+                        Status
+                      </SortHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((r) => (
+                    {requestPage.pageItems.map((r) => (
                       <TableRow key={r.id}>
                         {role === "superadmin" && (
                           <TableCell>
@@ -472,7 +570,11 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                                 >
                                   <XCircle className="h-4 w-4 text-destructive" />
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={() => openReview(r.id)}>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openReview(r.id)}
+                                >
                                   Review
                                 </Button>
                               </>
@@ -485,6 +587,15 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                     ))}
                   </TableBody>
                 </Table>
+                <TablePagination
+                  page={requestPage.page}
+                  pageCount={requestPage.pageCount}
+                  from={requestPage.from}
+                  to={requestPage.to}
+                  total={requestPage.total}
+                  label="requests"
+                  onPageChange={requestPage.setPage}
+                />
               </div>
             </CardContent>
           </Card>
@@ -575,28 +686,110 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
           <TabsContent value="audit" className="mt-4">
             <Card className="border-border/70">
               <CardContent className="p-6">
-                <h2 className="font-display text-2xl font-semibold">ESS Activity Log</h2>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="font-display text-2xl font-semibold">ESS Activity Log</h2>
+                  <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        className="w-56 pl-9"
+                        placeholder="Search user, action, request…"
+                        value={logSearch}
+                        onChange={(e) => setLogSearch(e.target.value)}
+                      />
+                    </div>
+                    <Select value={logModule} onValueChange={setLogModule}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue placeholder="All modules" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All modules</SelectItem>
+                        {logModules.map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {m}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={logDept} onValueChange={setLogDept}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="All departments" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All departments</SelectItem>
+                        {departments.map((d) => (
+                          <SelectItem key={d.code} value={d.name}>
+                            {d.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={logCategory} onValueChange={setLogCategory}>
+                      <SelectTrigger className="w-44">
+                        <SelectValue placeholder="All categories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All categories</SelectItem>
+                        {logCategories.map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {c}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                </div>
                 <div className="mt-4 overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Timestamp</TableHead>
-                        <TableHead>User</TableHead>
-                        <TableHead>Action</TableHead>
-                        <TableHead>Module</TableHead>
+                        <SortHead sortKey="timestamp" sort={logSort} onSort={toggleLogSort}>
+                          Timestamp
+                        </SortHead>
+                        <SortHead sortKey="user" sort={logSort} onSort={toggleLogSort}>
+                          User
+                        </SortHead>
+                        <SortHead sortKey="action" sort={logSort} onSort={toggleLogSort}>
+                          Action
+                        </SortHead>
+                        <SortHead sortKey="module" sort={logSort} onSort={toggleLogSort}>
+                          Module
+                        </SortHead>
+                        <SortHead sortKey="category" sort={logSort} onSort={toggleLogSort}>
+                          Category / Type
+                        </SortHead>
+                        <SortHead sortKey="department" sort={logSort} onSort={toggleLogSort}>
+                          Department
+                        </SortHead>
+                        <SortHead sortKey="requestId" sort={logSort} onSort={toggleLogSort}>
+                          Request ID
+                        </SortHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {auditLogs.map((a) => (
+                      {logPage.pageItems.map((a) => (
                         <TableRow key={a.id}>
                           <TableCell className="text-xs">{a.timestamp}</TableCell>
                           <TableCell className="text-xs">{a.user}</TableCell>
                           <TableCell className="text-sm">{a.action}</TableCell>
                           <TableCell className="text-xs">{a.module}</TableCell>
+                          <TableCell className="text-xs">{a.category}</TableCell>
+                          <TableCell className="text-xs">{a.department}</TableCell>
+                          <TableCell className="text-xs font-medium">{a.requestId}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
+                <TablePagination
+                  page={logPage.page}
+                  pageCount={logPage.pageCount}
+                  from={logPage.from}
+                  to={logPage.to}
+                  total={logPage.total}
+                  label="log entries"
+                  onPageChange={logPage.setPage}
+                />
                 </div>
               </CardContent>
             </Card>
@@ -747,7 +940,12 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
             {(role === "superadmin"
               ? reportOptions
               : reportOptions.filter(
-                  (r) => !["Branch Performance", "Approval Performance", "ESS Usage Statistics"].includes(r),
+                  (r) =>
+                    ![
+                      "Branch Performance",
+                      "Approval Performance",
+                      "ESS Usage Statistics",
+                    ].includes(r),
                 )
             ).map((r) => (
               <div

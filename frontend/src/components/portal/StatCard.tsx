@@ -54,14 +54,14 @@ export function StatCard({
   );
 
   const cardClass = cn(
-    "border-border/70 transition-all",
+    "border-border/70 h-full transition-all",
     interactive &&
       "group cursor-pointer hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md",
   );
 
   if (to) {
     return (
-      <Link to={to as never} className="block focus-visible:outline-none">
+      <Link to={to as never} className="block h-full focus-visible:outline-none">
         <Card className={cardClass}>{body}</Card>
       </Link>
     );
@@ -69,7 +69,7 @@ export function StatCard({
 
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className="block w-full text-left">
+      <button type="button" onClick={onClick} className="block h-full w-full text-left">
         <Card className={cardClass}>{body}</Card>
       </button>
     );

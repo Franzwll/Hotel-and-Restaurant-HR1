@@ -199,3 +199,42 @@ export const myBenefits = [
   { name: "HMO", value: "Maxicare Platinum", note: "Effective after regularization" },
   { name: "Insurance", value: "Group Life", note: "₱500,000 coverage" },
 ];
+
+export type EssActivityLog = {
+  id: string;
+  timestamp: string;
+  user: string;
+  action: string;
+  module: string;
+  category: string;
+  department: string;
+  requestId: string;
+};
+
+export const essActivityLog: EssActivityLog[] = [
+  { id: "ELOG-001", timestamp: "2026-07-26 08:14", user: "Juan Dela Cruz", action: "Approved sick leave request", module: "Leave", category: "Leave", department: "Kitchen / Culinary", requestId: "REQ-4410" },
+  { id: "ELOG-002", timestamp: "2026-07-26 07:58", user: "Maria Lim", action: "Reviewed COE request", module: "HR Document", category: "HR Document", department: "Food & Beverage", requestId: "REQ-4409" },
+  { id: "ELOG-003", timestamp: "2026-07-25 22:41", user: "Rosa Aquino", action: "Filed attendance correction", module: "Attendance", category: "Attendance", department: "Housekeeping", requestId: "REQ-4408" },
+  { id: "ELOG-004", timestamp: "2026-07-25 19:12", user: "Paolo Cruz", action: "Released payslip copies", module: "Payroll", category: "Payroll", department: "Front Office", requestId: "REQ-4407" },
+  { id: "ELOG-005", timestamp: "2026-07-25 16:30", user: "Paolo Cruz", action: "Rejected transportation reimbursement", module: "Reimbursement", category: "Reimbursement", department: "Kitchen / Culinary", requestId: "REQ-4406" },
+  { id: "ELOG-006", timestamp: "2026-07-24 14:05", user: "Ana Ramos", action: "Submitted company loan application", module: "Loan", category: "Loan", department: "Front Office", requestId: "REQ-4405" },
+  { id: "ELOG-007", timestamp: "2026-07-24 11:47", user: "Maria Lim", action: "Updated contact number", module: "Personal Info", category: "Personal Info", department: "Housekeeping", requestId: "REQ-4404" },
+  { id: "ELOG-008", timestamp: "2026-07-24 09:20", user: "Kevin Dela Cruz", action: "Filed sick leave request", module: "Leave", category: "Leave", department: "Kitchen / Culinary", requestId: "REQ-4410" },
+  { id: "ELOG-009", timestamp: "2026-07-23 20:10", user: "Marjun Devera", action: "Requested certificate of employment", module: "HR Document", category: "HR Document", department: "Food & Beverage", requestId: "REQ-4409" },
+  { id: "ELOG-010", timestamp: "2026-07-23 18:02", user: "Juan Dela Cruz", action: "Verified floor logbook entry", module: "Attendance", category: "Attendance", department: "Housekeeping", requestId: "REQ-4408" },
+  { id: "ELOG-011", timestamp: "2026-07-23 15:33", user: "Camille Ortega", action: "Requested June payslip", module: "Payroll", category: "Payroll", department: "Front Office", requestId: "REQ-4407" },
+  { id: "ELOG-012", timestamp: "2026-07-22 13:15", user: "Kevin Dela Cruz", action: "Filed transportation reimbursement", module: "Reimbursement", category: "Reimbursement", department: "Kitchen / Culinary", requestId: "REQ-4406" },
+  { id: "ELOG-013", timestamp: "2026-07-22 10:44", user: "Paolo Cruz", action: "Escalated loan application to HR", module: "Loan", category: "Loan", department: "Front Office", requestId: "REQ-4405" },
+  { id: "ELOG-014", timestamp: "2026-07-21 21:09", user: "Rosa Aquino", action: "Updated emergency contact", module: "Personal Info", category: "Personal Info", department: "Housekeeping", requestId: "REQ-4404" },
+  { id: "ELOG-015", timestamp: "2026-07-21 17:55", user: "Maria Lim", action: "Requested password reset", module: "Account", category: "Account", department: "Food & Beverage", requestId: "REQ-4409" },
+  { id: "ELOG-016", timestamp: "2026-07-21 12:38", user: "Juan Dela Cruz", action: "Approved attendance correction", module: "Attendance", category: "Attendance", department: "Housekeeping", requestId: "REQ-4408" },
+  { id: "ELOG-017", timestamp: "2026-07-20 22:47", user: "Ana Ramos", action: "Uploaded loan supporting document", module: "Loan", category: "Loan", department: "Front Office", requestId: "REQ-4405" },
+  { id: "ELOG-018", timestamp: "2026-07-20 19:26", user: "Kevin Dela Cruz", action: "Checked leave balance", module: "Leave", category: "Leave", department: "Kitchen / Culinary", requestId: "REQ-4410" },
+  { id: "ELOG-019", timestamp: "2026-07-20 15:01", user: "Camille Ortega", action: "Downloaded payslip PDF", module: "Payroll", category: "Payroll", department: "Front Office", requestId: "REQ-4407" },
+  { id: "ELOG-020", timestamp: "2026-07-19 23:18", user: "Rosa Aquino", action: "Completed contact info update", module: "Personal Info", category: "Personal Info", department: "Housekeeping", requestId: "REQ-4404" },
+  { id: "ELOG-021", timestamp: "2026-07-19 20:04", user: "Marjun Devera", action: "Resubmitted COE request", module: "HR Document", category: "HR Document", department: "Food & Beverage", requestId: "REQ-4409" },
+  { id: "ELOG-022", timestamp: "2026-07-19 16:52", user: "Paolo Cruz", action: "Denied transportation reimbursement appeal", module: "Reimbursement", category: "Reimbursement", department: "Kitchen / Culinary", requestId: "REQ-4406" },
+  { id: "ELOG-023", timestamp: "2026-07-18 14:33", user: "Maria Lim", action: "Unlocked ESS account", module: "Account", category: "Account", department: "Food & Beverage", requestId: "REQ-4409" },
+  { id: "ELOG-024", timestamp: "2026-07-18 11:20", user: "Ana Ramos", action: "Signed loan agreement", module: "Loan", category: "Loan", department: "Front Office", requestId: "REQ-4405" },
+  { id: "ELOG-025", timestamp: "2026-07-17 09:47", user: "Kevin Dela Cruz", action: "Marked sick leave as completed", module: "Leave", category: "Leave", department: "Kitchen / Culinary", requestId: "REQ-4410" },
+];

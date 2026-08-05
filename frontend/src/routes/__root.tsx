@@ -79,15 +79,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Oxford Suites Makati — Careers & HRMS" },
+      { title: "Oxford Suites Makati — Hotel, Dining & Careers" },
       {
         name: "description",
         content:
-          "Oxford Suites Makati hotel and restaurant careers portal and human resource management system.",
+          "Discover Oxford Suites Makati: elegant suites, distinctive dining, event venues, and hospitality careers with our HRMS recruitment portal.",
       },
       { name: "author", content: "Oxford Suites Makati" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { property: "og:title", content: "Oxford Suites Makati — Hotel, Dining & Careers" },
+      { name: "twitter:title", content: "Oxford Suites Makati — Hotel, Dining & Careers" },
+      { property: "og:description", content: "Discover Oxford Suites Makati: elegant suites, distinctive dining, event venues, and hospitality careers with our HRMS recruitment portal." },
+      { name: "twitter:description", content: "Discover Oxford Suites Makati: elegant suites, distinctive dining, event venues, and hospitality careers with our HRMS recruitment portal." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/b34748db-cf5e-4ce9-a617-b80368e68838/id-preview-f6ff7c7b--64872254-6f02-4d48-8e46-912da4b446e4.lovable.app-1785936729737.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/b34748db-cf5e-4ce9-a617-b80368e68838/id-preview-f6ff7c7b--64872254-6f02-4d48-8e46-912da4b446e4.lovable.app-1785936729737.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -97,7 +103,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Jost:wght@300;400;500;600&display=swap",
       },
-      { rel: "icon", href: "/favicon.png", type: "image/png" },
     ],
   }),
 

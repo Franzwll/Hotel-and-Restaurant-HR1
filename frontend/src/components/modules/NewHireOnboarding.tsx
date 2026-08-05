@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { CheckCircle2, Circle, Filter, UserPlus, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, Circle, Pencil, Search, UserPlus, Users, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/portal/PageHeader";
@@ -34,8 +34,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TablePagination } from "@/components/ui/table-pagination";
+import { usePagination } from "@/hooks/usePagination";
 import { departments, newHires as seedHires, positions, type NewHire } from "@/data/hr";
+import { applicants } from "@/data/applicants";
+import { DEFAULT_ACCOUNT_PASSWORD, hireStore, useHires, usePendingHire } from "@/data/hires";
 import { cn } from "@/lib/utils";
+import { SortHead, useSort } from "@/components/portal/sortable";
+
+/** Today's date in yyyy-mm-dd, used as the default start date for new hires. */
+const todayIso = new Date().toISOString().slice(0, 10);
 
 const stages: NewHire["stage"][] = ["Pre-onboarding", "Probationary", "Regular"];
 
@@ -87,29 +95,67 @@ const initialsOf = (name: string) =>
     .toUpperCase();
 
 export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
-  const [hires, setHires] = useState<NewHire[]>(seedHires);
+  const hires = useHires();
+  const setHires = (updater: (prev: NewHire[]) => NewHire[]) => hireStore.setHires(updater);
+  const pending = usePendingHire();
   const [stage, setStage] = useState<NewHire["stage"]>("Pre-onboarding");
   const [showAllStages, setShowAllStages] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(seedHires[0]?.id ?? null);
   const [addOpen, setAddOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editSnapshot, setEditSnapshot] = useState<{ item: string; done: boolean }[] | null>(null);
+  const [search, setSearch] = useState("");
+  const [deptFilter, setDeptFilter] = useState<string>("all");
   const [form, setForm] = useState({
     name: "",
-    position: positions[0]!.title,
-    department: departments[0]!.name,
-    startDate: "",
+    position: "",
+    department: "",
+    startDate: todayIso,
     email: "",
     phone: "",
   });
+  /** True when the modal was opened from an accepted applicant — name is fixed. */
+  const [nameLocked, setNameLocked] = useState(false);
+
+  /** Opens a clean Add New Hire modal: nothing pre-set except today's start date. */
+  const openAddHire = () => {
+    setForm({
+      name: "",
+      position: "",
+      department: "",
+      startDate: todayIso,
+      email: "",
+      phone: "",
+    });
+    setNameLocked(false);
+    setAddOpen(true);
+  };
+
+  /** An accepted applicant arrives here with a pre-filled Add New Hire modal. */
+  useEffect(() => {
+    if (!pending) return;
+    setForm({
+      name: pending.name,
+      position: pending.position,
+      department: pending.department,
+      startDate: todayIso,
+      email: pending.email,
+      phone: pending.phone,
+    });
+    setNameLocked(true);
+    setAddOpen(true);
+    hireStore.setPending(null);
+  }, [pending]);
 
   const selected = hires.find((h) => h.id === selectedId) ?? null;
 
-  const toggleItem = (hireId: string, item: string) =>
+
+  const toggleItem = (hireId: string, item: string) => {
+    if (editingId !== hireId) return;
     setHires((prev) =>
       prev.map((h) => {
         if (h.id !== hireId) return h;
-        const checklist = h.checklist.map((c) =>
-          c.item === item ? { ...c, done: !c.done } : c,
-        );
+        const checklist = h.checklist.map((c) => (c.item === item ? { ...c, done: !c.done } : c));
         const complete = checklist.every((c) => c.done);
         const idx = stages.indexOf(h.stage);
         if (complete && idx < stages.length - 1) {
@@ -126,7 +172,28 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
         return { ...h, checklist };
       }),
     );
+  };
 
+  const startEditChecklist = (hire: NewHire) => {
+    setEditingId(hire.id);
+    setEditSnapshot(hire.checklist.map((c) => ({ ...c })));
+    setSelectedId(hire.id);
+  };
+
+  const cancelEditChecklist = () => {
+    if (editingId && editSnapshot) {
+      setHires((prev) =>
+        prev.map((h) => (h.id === editingId ? { ...h, checklist: editSnapshot } : h)),
+      );
+    }
+    setEditingId(null);
+    setEditSnapshot(null);
+  };
+
+  const saveEditChecklist = () => {
+    setEditingId(null);
+    setEditSnapshot(null);
+  };
 
   const advance = (hire: NewHire) => {
     const idx = stages.indexOf(hire.stage);
@@ -146,7 +213,30 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
   const progress = (h: NewHire) =>
     Math.round((h.checklist.filter((c) => c.done).length / h.checklist.length) * 100);
 
-  const visible = showAllStages ? hires : hires.filter((h) => h.stage === stage);
+  const stageFiltered = showAllStages ? hires : hires.filter((h) => h.stage === stage);
+  const filtered = stageFiltered.filter((h) => {
+    const matchesDept = deptFilter === "all" || h.department === deptFilter;
+    const q = search.trim().toLowerCase();
+    const matchesSearch =
+      !q ||
+      h.name.toLowerCase().includes(q) ||
+      h.position.toLowerCase().includes(q) ||
+      h.department.toLowerCase().includes(q);
+    return matchesDept && matchesSearch;
+  });
+  const {
+    sort,
+    toggle: onSort,
+    sorted: visible,
+  } = useSort<NewHire, "name" | "position" | "startDate" | "requirements" | "stage">(filtered, {
+    name: (h) => h.name,
+    position: (h) => h.position,
+    startDate: (h) => h.startDate,
+    requirements: (h) => progress(h),
+    stage: (h) => h.stage,
+  });
+
+  const hirePage = usePagination(visible);
 
   const selectStage = (s: NewHire["stage"]) => {
     setStage(s);
@@ -156,39 +246,38 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
   };
 
   const addHire = () => {
-    if (!form.name || !form.startDate || !form.email) {
-      toast.error("Name, email and start date are required.");
+    if (!form.name || !form.position || !form.department || !form.startDate || !form.email) {
+      toast.error("Name, position, department, email and start date are required.");
       return;
     }
     const id = `NH-${String(hires.length + 1).padStart(2, "0")}`;
-    setHires((prev) => [
-      {
-        id,
-        name: form.name,
-        position: form.position,
-        department: form.department,
-        stage: "Pre-onboarding",
-        startDate: form.startDate,
-        initials: initialsOf(form.name),
-        email: form.email,
-        phone: form.phone,
-        checklist: defaultChecklist.map((item) => ({ item, done: false })),
-      },
-      ...prev,
-    ]);
+    hireStore.add({
+      id,
+      name: form.name,
+      position: form.position,
+      department: form.department,
+      stage: "Pre-onboarding",
+      startDate: form.startDate,
+      initials: initialsOf(form.name),
+      email: form.email,
+      phone: form.phone,
+      checklist: defaultChecklist.map((item) => ({ item, done: false })),
+    });
+
     setSelectedId(id);
     setStage("Pre-onboarding");
     setShowAllStages(false);
     setAddOpen(false);
+    setNameLocked(false);
     setForm({
       name: "",
-      position: positions[0]!.title,
-      department: departments[0]!.name,
-      startDate: "",
+      position: "",
+      department: "",
+      startDate: todayIso,
       email: "",
       phone: "",
     });
-    toast.success(`${form.name} added to pre-onboarding`);
+    toast.success(`${form.name} added to pre-onboarding and Employee Records`);
   };
 
   return (
@@ -230,8 +319,9 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
             <div className="absolute left-[8%] right-[8%] top-4 h-0.5 bg-border" />
             <div
               className="absolute left-[8%] top-4 h-0.5 bg-primary transition-all"
-              style={{ width: `${(stages.indexOf(stage) / (stages.length - 1)) * 84}%` }}
+              style={{ width: `${((stages.indexOf(stage) + 1) / stages.length) * 84}%` }}
             />
+
             <div className="relative grid grid-cols-3">
               {stages.map((s, i) => {
                 const active = stages.indexOf(stage) >= i;
@@ -239,7 +329,7 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                   <button
                     key={s}
                     onClick={() => selectStage(s)}
-                    className="flex flex-col items-center text-center"
+                    className="flex cursor-pointer flex-col items-center text-center"
                   >
                     <span
                       className={cn(
@@ -274,9 +364,9 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
         </CardContent>
       </Card>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-        <Card className="border-border/70">
-          <CardContent className="p-6">
+      <div className="mt-6 grid gap-6 2xl:grid-cols-[1.6fr_1fr]">
+        <Card className="min-w-0 border-border/70">
+          <CardContent className="min-w-0 p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-display text-2xl font-semibold">
@@ -286,8 +376,29 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                   Click a hire to open their requirements checklist on the right.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-muted-foreground" />
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search name, position..."
+                    className="w-56 pl-8"
+                  />
+                </div>
+                <Select value={deptFilter} onValueChange={setDeptFilter}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All departments</SelectItem>
+                    {departments.map((d) => (
+                      <SelectItem key={d.code} value={d.name}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Select
                   value={showAllStages ? "all" : stage}
                   onValueChange={(v) => {
@@ -295,7 +406,7 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                     else selectStage(v as NewHire["stage"]);
                   }}
                 >
-                  <SelectTrigger className="w-56">
+                  <SelectTrigger className="w-48">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -307,7 +418,7 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                     ))}
                   </SelectContent>
                 </Select>
-                <Button size="sm" onClick={() => setAddOpen(true)}>
+                <Button size="sm" onClick={openAddHire}>
                   <UserPlus className="mr-2 h-4 w-4" /> Add new hire
                 </Button>
               </div>
@@ -317,15 +428,26 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>New Hire</TableHead>
-                    <TableHead>Position</TableHead>
-                    <TableHead>Start Date</TableHead>
-                    <TableHead>Requirements</TableHead>
-                    <TableHead>Stage</TableHead>
+                    <SortHead sortKey="name" sort={sort} onSort={onSort}>
+                      New Hire
+                    </SortHead>
+                    <SortHead sortKey="position" sort={sort} onSort={onSort}>
+                      Position
+                    </SortHead>
+                    <SortHead sortKey="startDate" sort={sort} onSort={onSort}>
+                      Start Date
+                    </SortHead>
+                    <SortHead sortKey="requirements" sort={sort} onSort={onSort}>
+                      Requirements
+                    </SortHead>
+                    <SortHead sortKey="stage" sort={sort} onSort={onSort}>
+                      Stage
+                    </SortHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visible.map((h) => {
+                  {hirePage.pageItems.map((h) => {
                     const pct = progress(h);
                     const complete = pct === 100;
                     return (
@@ -387,13 +509,34 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                             {h.stage}
                           </Badge>
                         </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {editingId === h.id ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="cursor-pointer"
+                              onClick={cancelEditChecklist}
+                            >
+                              Cancel
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="cursor-pointer"
+                              onClick={() => startEditChecklist(h)}
+                            >
+                              <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit Checklist
+                            </Button>
+                          )}
+                        </TableCell>
                       </TableRow>
                     );
                   })}
                   {visible.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={6}
                         className="py-8 text-center text-sm text-muted-foreground"
                       >
                         No hires in this stage.
@@ -403,21 +546,33 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                 </TableBody>
               </Table>
             </div>
+            <TablePagination
+              page={hirePage.page}
+              pageCount={hirePage.pageCount}
+              from={hirePage.from}
+              to={hirePage.to}
+              total={hirePage.total}
+              label="hires"
+              onPageChange={hirePage.setPage}
+            />
           </CardContent>
         </Card>
 
         {/* CHECKLIST PANEL — right corner */}
         <Card
           className={cn(
-            "h-fit border-border/70 transition-colors xl:sticky xl:top-6",
+            "flex h-full min-w-0 flex-col border-border/70 transition-colors",
             selected &&
               progress(selected) === 100 &&
               "border-success/50 bg-success/5 ring-1 ring-success/30",
           )}
         >
-          <CardContent className="p-6">
+          <CardContent className="flex min-w-0 flex-1 flex-col p-6">
             {!selected ? (
-              <div className="py-10 text-center text-sm text-muted-foreground">
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 py-10 text-center text-sm text-muted-foreground">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                  <Users className="h-6 w-6 text-muted-foreground" />
+                </span>
                 Select a hire from the list to view their requirements checklist.
               </div>
             ) : (
@@ -441,9 +596,17 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                       <p className="text-xs text-muted-foreground">{selected.position}</p>
                     </div>
                   </div>
-                  <Button size="icon" variant="ghost" onClick={() => setSelectedId(null)}>
-                    <X className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="cursor-pointer"
+                      onClick={() => setSelectedId(null)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+
                 </div>
 
                 <div className="mt-4 space-y-1 text-xs text-muted-foreground">
@@ -466,35 +629,44 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                   </div>
                   <Progress
                     value={progress(selected)}
-                    className={cn(
-                      "mt-2 h-2",
-                      progress(selected) === 100 && "[&>div]:bg-success",
-                    )}
+                    className={cn("mt-2 h-2", progress(selected) === 100 && "[&>div]:bg-success")}
                   />
                 </div>
 
                 <ul className="mt-4 space-y-1.5">
-                  {selected.checklist.map((c) => (
-                    <li key={c.item}>
-                      <button
-                        type="button"
-                        onClick={() => toggleItem(selected.id, c.item)}
-                        className={cn(
-                          "flex w-full items-center gap-2.5 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                          c.done
-                            ? "border-success/30 bg-success/10 text-success"
-                            : "border-border hover:border-primary/40",
-                        )}
-                      >
-                        {c.done ? (
-                          <CheckCircle2 className="h-4 w-4 shrink-0" />
-                        ) : (
-                          <Circle className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        )}
-                        <span className={cn(c.done && "line-through opacity-80")}>{c.item}</span>
-                      </button>
-                    </li>
-                  ))}
+                  {[...selected.checklist]
+                    .map((c, i) => ({ ...c, i }))
+                    .sort((a, b) => Number(a.done) - Number(b.done) || a.i - b.i)
+                    .map((c) => {
+                      const isEditingThis = editingId === selected.id;
+                      return (
+                        <li key={c.item} className="transition-all duration-300 ease-in-out">
+                          <button
+                            type="button"
+                            disabled={!isEditingThis}
+                            onClick={() => toggleItem(selected.id, c.item)}
+                            className={cn(
+                              "flex w-full items-center gap-2.5 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                              isEditingThis ? "cursor-pointer" : "cursor-not-allowed opacity-80",
+                              c.done
+                                ? "border-success/30 bg-success/10 text-success"
+                                : "border-border hover:border-primary/40",
+                            )}
+                          >
+                            {c.done ? (
+                              <CheckCircle2 className="h-4 w-4 shrink-0" />
+                            ) : (
+                              <Circle className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            )}
+                            <span
+                              className={cn("cursor-pointer", c.done && "line-through opacity-80")}
+                            >
+                              {c.item}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
                 </ul>
 
                 {progress(selected) === 100 && (
@@ -503,9 +675,9 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                   </div>
                 )}
 
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-auto flex flex-wrap items-stretch gap-2 pt-4">
                   <Button
-                    className="flex-1"
+                    className="h-10 flex-1"
                     disabled={selected.stage === "Regular"}
                     onClick={() => advance(selected)}
                   >
@@ -514,6 +686,7 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                   </Button>
                   <Button
                     variant="outline"
+                    className="h-10"
                     onClick={() =>
                       setHires((prev) =>
                         prev.map((h) =>
@@ -529,6 +702,23 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                   >
                     Mark all done
                   </Button>
+                  {editingId === selected.id ? (
+                    <Button
+                      variant="outline"
+                      className="h-10 cursor-pointer"
+                      onClick={cancelEditChecklist}
+                    >
+                      Cancel
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="h-10 cursor-pointer"
+                      onClick={() => startEditChecklist(selected)}
+                    >
+                      <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+                    </Button>
+                  )}
                 </div>
               </>
             )}
@@ -537,23 +727,69 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
       </div>
 
       {/* ADD NEW HIRE */}
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+      <Dialog
+        open={addOpen}
+        onOpenChange={(o) => {
+          setAddOpen(o);
+          if (!o) setNameLocked(false);
+        }}
+      >
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-display text-2xl">Add New Hire</DialogTitle>
             <DialogDescription>
-              Creates a pre-onboarding record with the standard requirements checklist.
+              Creates a pre-onboarding record with the standard requirements checklist, and adds the
+              hire to Employee Records.
             </DialogDescription>
           </DialogHeader>
+          <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
+            Account note: the employee portal account is created with the default password{" "}
+            <span className="font-medium text-foreground">{DEFAULT_ACCOUNT_PASSWORD}</span> — the
+            hire is prompted to change it on first login.
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Full name</Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Juan Dela Cruz"
-              />
+              {nameLocked ? (
+                <>
+                  <Input value={form.name} readOnly className="bg-muted/50" />
+                  <p className="text-[0.7rem] text-muted-foreground">
+                    Accepted applicant — details carried over from assessment.
+                  </p>
+                </>
+              ) : (
+                <Select
+                  value={form.name}
+                  onValueChange={(v) => {
+                    const a = applicants.find((x) => x.name === v);
+                    const p = a ? positions.find((x) => x.title === a.position) : undefined;
+                    setForm((prev) => ({
+                      ...prev,
+                      name: v,
+                      position: p?.title ?? prev.position,
+                      department: p?.department ?? prev.department,
+                      email: a?.email ?? prev.email,
+                      phone: a?.phone ?? prev.phone,
+                    }));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select applicant" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {applicants
+                      .filter((a) => !hires.some((h) => h.name === a.name))
+                      .map((a) => (
+                        <SelectItem key={a.id} value={a.name}>
+                          {a.name} — {a.position}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
+
             <div className="space-y-1.5">
               <Label>Position</Label>
               <Select
@@ -564,7 +800,7 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select position" />
                 </SelectTrigger>
                 <SelectContent>
                   {positions.map((p) => (
@@ -582,7 +818,7 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                 onValueChange={(v) => setForm({ ...form, department: v })}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
                   {departments.map((d) => (

@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  Archive,
+  ArchiveRestore,
   Download,
   FileText,
   Pencil,
+  Minus,
   Plus,
   Search,
   ShieldCheck,
@@ -12,6 +15,7 @@ import {
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/portal/PageHeader";
+import { SortHead, useSort } from "@/components/portal/sortable";
 import { StatCard } from "@/components/portal/StatCard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +49,11 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { departments, employees as seedEmployees, type Employee } from "@/data/hr";
+import { useHireEmployees } from "@/data/hires";
+import { TablePagination } from "@/components/ui/table-pagination";
+
+import { isArchivable, lastUpdatedFor, recordMeta } from "@/data/records";
+import { usePagination } from "@/hooks/usePagination";
 
 const documentTypes = [
   "Certificate of Employment (COE)",
@@ -72,8 +81,7 @@ const initials = (name: string) =>
     .join("");
 
 /** Deterministic pseudo-random helper so demo records stay stable per employee. */
-const seedOf = (id: string) =>
-  id.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 9973, 7);
+const seedOf = (id: string) => id.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 9973, 7);
 
 type GeneratedDoc = {
   id: string;
@@ -88,6 +96,7 @@ type RecordLog = {
   actor: string;
   action: "Added" | "Edited" | "Deleted";
   target: string;
+  department: string;
   notes: string;
 };
 
@@ -98,6 +107,7 @@ const recordLogs: RecordLog[] = [
     actor: "Juan Dela Cruz",
     action: "Added",
     target: "EMP-0004 · Camille Ortega (201 file)",
+    department: "Front Office",
     notes: "New employee record created after onboarding approval.",
   },
   {
@@ -106,6 +116,7 @@ const recordLogs: RecordLog[] = [
     actor: "Maria Lim",
     action: "Edited",
     target: "EMP-0006 · Marjun Devera (Employment information)",
+    department: "Housekeeping",
     notes: "Updated department assignment after transfer.",
   },
   {
@@ -114,6 +125,7 @@ const recordLogs: RecordLog[] = [
     actor: "Juan Dela Cruz",
     action: "Edited",
     target: "EMP-0002 · Chef Gabriel Mendoza (Personal information)",
+    department: "Food & Beverage",
     notes: "Corrected contact number.",
   },
   {
@@ -122,6 +134,7 @@ const recordLogs: RecordLog[] = [
     actor: "Paolo Cruz",
     action: "Deleted",
     target: "EMP-0009 · Test Record",
+    department: "Human Resources",
     notes: "Removed duplicate record created in error.",
   },
   {
@@ -130,6 +143,7 @@ const recordLogs: RecordLog[] = [
     actor: "Maria Lim",
     action: "Added",
     target: "EMP-0005 · Kevin Dela Cruz (NBI Clearance file)",
+    department: "Engineering",
     notes: "Uploaded renewed NBI clearance to 201 file.",
   },
   {
@@ -138,6 +152,7 @@ const recordLogs: RecordLog[] = [
     actor: "Juan Dela Cruz",
     action: "Deleted",
     target: "EMP-0003 · Lourdes Bautista (Expired Health Certificate)",
+    department: "Front Office",
     notes: "Removed expired document after renewal was uploaded.",
   },
 ];
@@ -171,6 +186,16 @@ type Profile = {
   missing: string[];
 };
 
+/** One row in the 201 file Documents tab. */
+type ProfileDoc = { name: string; status: "Submitted" | "Missing"; file?: string | undefined };
+
+/** True when a record's last-updated date is older than the configured threshold. */
+function olderThanYears(dateStr: string, years: number, now: Date = new Date()) {
+  const t = new Date(dateStr).getTime();
+  if (Number.isNaN(t)) return false;
+  return now.getTime() - t >= years * 365.25 * 24 * 60 * 60 * 1000;
+}
+
 const civil = ["Single", "Married", "Widowed", "Separated"];
 const genders = ["Female", "Male"];
 
@@ -195,14 +220,14 @@ function buildProfile(e: Employee): Profile {
     family: `Spouse / Parent: ${["Elena", "Ramon", "Teresa", "Miguel"][s % 4]} ${
       e.name.split(" ").slice(-1)[0]
     } · ${s % 4} dependent(s)`,
-    emergencyName: `${["Elena", "Ramon", "Teresa", "Miguel"][(s + 1) % 4]} ${e.name
-      .split(" ")
-      .slice(-1)[0]}`,
+    emergencyName: `${["Elena", "Ramon", "Teresa", "Miguel"][(s + 1) % 4]} ${
+      e.name.split(" ").slice(-1)[0]
+    }`,
     emergencyPhone: `0917 ${String(100 + (s % 800))} ${String(1000 + (s % 8000))}`,
     emergencyRelation: ["Spouse", "Parent", "Sibling", "Guardian"][s % 4]!,
-    sss: `34-${String(1000000 + (s * 971) % 8999999)}-${s % 10}`,
+    sss: `34-${String(1000000 + ((s * 971) % 8999999))}-${s % 10}`,
     pagibig: `1211-${String(1000 + (s % 8999))}-${String(1000 + ((s * 7) % 8999))}`,
-    philhealth: `02-${String(100000000 + (s * 613) % 899999999)}-${s % 10}`,
+    philhealth: `02-${String(100000000 + ((s * 613) % 899999999))}-${s % 10}`,
     tin: `${String(100 + (s % 800))}-${String(100 + ((s * 3) % 800))}-${String(
       100 + ((s * 5) % 800),
     )}-000`,
@@ -212,7 +237,8 @@ function buildProfile(e: Employee): Profile {
       "Guest Service Excellence Training",
       ...(s % 2 ? ["TESDA NC II"] : []),
     ],
-    licenses: s % 3 === 0 ? ["Food Handler's Permit", "Health Certificate"] : ["Health Certificate"],
+    licenses:
+      s % 3 === 0 ? ["Food Handler's Permit", "Health Certificate"] : ["Health Certificate"],
     medical: ["Annual Physical Exam (2026)", "Drug Test Clearance"],
     missing: missingPool.slice(0, missingCount),
   };
@@ -259,7 +285,17 @@ const emptyEmployee = {
 export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
   const isSuper = role === "superadmin";
 
+  const hireEmployees = useHireEmployees();
   const [list, setList] = useState<Employee[]>(seedEmployees);
+
+  /** Hires created in New Hire Onboarding show up here immediately. */
+  useEffect(() => {
+    setList((prev) => {
+      const missing = hireEmployees.filter((e) => !prev.some((p) => p.id === e.id));
+      return missing.length ? [...missing, ...prev] : prev;
+    });
+  }, [hireEmployees]);
+
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
@@ -270,6 +306,11 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
   const [generatedDocs, setGeneratedDocs] = useState<GeneratedDoc[]>([]);
   const [generatedOpen, setGeneratedOpen] = useState(false);
   const [logSearch, setLogSearch] = useState("");
+  const [logDept, setLogDept] = useState("all");
+  const [archivedIds, setArchivedIds] = useState<string[]>(() =>
+    recordMeta.filter((m) => isArchivable(m.lastUpdated)).map((m) => m.employeeId),
+  );
+  const [listView, setListView] = useState<"active" | "archived">("active");
   const [form, setForm] = useState(emptyEmployee);
   const [history, setHistory] = useState<Record<string, HistoryEntry[]>>({});
   const [newHistory, setNewHistory] = useState({
@@ -282,15 +323,72 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
   const [logAction, setLogAction] = useState("all");
   const [bulkPickOpen, setBulkPickOpen] = useState(false);
   const [bulkTypes, setBulkTypes] = useState<string[]>([documentTypes[0]!]);
+  /** Auto-archive threshold in years — configurable by the HR admin. */
+  const [archiveYears, setArchiveYears] = useState("10");
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveDraft, setArchiveDraft] = useState("10");
+  const [manualArchived, setManualArchived] = useState<string[]>([]);
+  const [docsById, setDocsById] = useState<Record<string, ProfileDoc[]>>({});
+  const [personalOverrides, setPersonalOverrides] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [docDialog, setDocDialog] = useState<{
+    mode: "add" | "edit";
+    index: number;
+    name: string;
+    file: string;
+  } | null>(null);
+  const [personalOpen, setPersonalOpen] = useState(false);
+  const [employmentOpen, setEmploymentOpen] = useState(false);
+  const [personalForm, setPersonalForm] = useState<Record<string, string>>({});
+  const [employmentForm, setEmploymentForm] = useState<Record<string, string>>({});
 
   const profile = list.find((e) => e.id === profileId) ?? null;
 
   const filtered = list.filter((e) => {
+    const archived = archivedIds.includes(e.id);
+    if (listView === "archived" ? !archived : archived) return false;
     if (dept !== "all" && e.department !== dept) return false;
     if (search && !`${e.name} ${e.position} ${e.id}`.toLowerCase().includes(search.toLowerCase()))
       return false;
     return true;
   });
+
+  const employeeSort = useSort<
+    Employee,
+    "employee" | "position" | "department" | "type" | "dateHired" | "status"
+  >(filtered, {
+    employee: (e) => e.name,
+    position: (e) => e.position,
+    department: (e) => e.department,
+    type: (e) => e.employmentType,
+    dateHired: (e) => e.dateHired,
+    status: (e) => (archivedIds.includes(e.id) ? "Archived" : e.status),
+  });
+
+  const logSort = useSort<
+    RecordLog,
+    "timestamp" | "actor" | "action" | "target" | "department" | "notes"
+  >(
+    recordLogs.filter(
+      (l) =>
+        (logAction === "all" || l.action === logAction) &&
+        (logDept === "all" || l.department === logDept) &&
+        `${l.actor} ${l.target} ${l.notes}`.toLowerCase().includes(logSearch.toLowerCase()),
+    ),
+    {
+      timestamp: (l) => l.timestamp,
+      actor: (l) => l.actor,
+      action: (l) => l.action,
+      target: (l) => l.target,
+      department: (l) => l.department,
+      notes: (l) => l.notes,
+    },
+  );
+
+  const employeePage = usePagination(employeeSort.sorted);
+  const logPage = usePagination(logSort.sorted);
+
 
   const toggle = (id: string) =>
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -344,6 +442,154 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
     toast.success("Employee record deleted");
   };
 
+  const archiveEmployee = (id: string) => {
+    setManualArchived((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setArchivedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    toast.success("Record moved to Archived");
+  };
+
+  const restoreEmployee = (id: string) => {
+    setManualArchived((prev) => prev.filter((x) => x !== id));
+    setArchivedIds((prev) => prev.filter((x) => x !== id));
+    toast.success("Record restored to active list");
+  };
+
+  /** Re-runs auto-archiving with a new retention threshold. */
+  const applyArchiveYears = (years: string) => {
+    setArchiveYears(years);
+    const auto = recordMeta
+      .filter((m) => olderThanYears(m.lastUpdated, Number(years)))
+      .map((m) => m.employeeId);
+    setArchivedIds(Array.from(new Set([...manualArchived, ...auto])));
+    toast.success(`Auto-archiving records inactive for ${years}+ years`);
+  };
+
+  /** Documents currently on a 201 file (seeded from the fixture, then edited in place). */
+  const docsFor = (emp: Employee): ProfileDoc[] => {
+    const existing = docsById[emp.id];
+    if (existing) return existing;
+    const p = buildProfile(emp);
+    return [
+      ...p.certificates.map((d) => ({ name: d, status: "Submitted" as const })),
+      ...p.licenses.map((d) => ({ name: d, status: "Submitted" as const })),
+      ...p.medical.map((d) => ({ name: d, status: "Submitted" as const })),
+      ...p.missing.map((d) => ({ name: d, status: "Missing" as const })),
+    ];
+  };
+
+  const setDocs = (empId: string, next: ProfileDoc[]) =>
+    setDocsById((prev) => ({ ...prev, [empId]: next }));
+
+  const saveDoc = () => {
+    if (!profile || !docDialog) return;
+    const name = docDialog.name.trim();
+    if (!name) {
+      toast.error("Document name is required");
+      return;
+    }
+    const current = docsFor(profile);
+    if (docDialog.mode === "add") {
+      setDocs(profile.id, [
+        ...current,
+        { name, status: "Submitted", file: docDialog.file || undefined },
+      ]);
+      toast.success("Document added to 201 file");
+    } else {
+      setDocs(
+        profile.id,
+        current.map((d, i) =>
+          i === docDialog.index
+            ? { ...d, name, status: "Submitted", file: docDialog.file || d.file }
+            : d,
+        ),
+      );
+      toast.success("Document updated");
+    }
+    setDocDialog(null);
+  };
+
+  const removeDoc = (index: number) => {
+    if (!profile) return;
+    setDocs(
+      profile.id,
+      docsFor(profile).filter((_, i) => i !== index),
+    );
+    toast.success("Document removed");
+  };
+
+  const openPersonalEdit = () => {
+    if (!profile) return;
+    const p = { ...buildProfile(profile), ...(personalOverrides[profile.id] ?? {}) };
+    setPersonalForm({
+      name: profile.name,
+      birthDate: String(p.birthDate),
+      gender: String(p.gender),
+      civilStatus: String(p.civilStatus),
+      nationality: String(p.nationality),
+      personalEmail: String(p.personalEmail),
+      phone: profile.phone,
+      address: String(p.address),
+      emergencyName: String(p.emergencyName),
+      emergencyRelation: String(p.emergencyRelation),
+      emergencyPhone: String(p.emergencyPhone),
+    });
+    setPersonalOpen(true);
+  };
+
+  const savePersonal = () => {
+    if (!profile) return;
+    const { name, phone, ...rest } = personalForm;
+    setList((prev) =>
+      prev.map((e) =>
+        e.id === profile.id ? { ...e, name: name || e.name, phone: phone ?? e.phone } : e,
+      ),
+    );
+    setPersonalOverrides((prev) => ({
+      ...prev,
+      [profile.id]: { ...(prev[profile.id] ?? {}), ...rest },
+    }));
+    setPersonalOpen(false);
+    toast.success("Personal information updated");
+  };
+
+  const openEmploymentEdit = () => {
+    if (!profile) return;
+    setEmploymentForm({
+      position: profile.position,
+      department: profile.department,
+      status: profile.status,
+      employmentType: profile.employmentType,
+      dateHired: profile.dateHired,
+      supervisor: profile.supervisor,
+      email: profile.email,
+    });
+    setEmploymentOpen(true);
+  };
+
+  const saveEmployment = () => {
+    if (!profile) return;
+    setList((prev) =>
+      prev.map((e) =>
+        e.id === profile.id
+          ? {
+              ...e,
+              position: employmentForm["position"] || e.position,
+              department: employmentForm["department"] || e.department,
+              status: (employmentForm["status"] as Employee["status"]) || e.status,
+              employmentType:
+                (employmentForm["employmentType"] as Employee["employmentType"]) ||
+                e.employmentType,
+              dateHired: employmentForm["dateHired"] || e.dateHired,
+              supervisor: employmentForm["supervisor"] || e.supervisor,
+              email: employmentForm["email"] || e.email,
+            }
+          : e,
+      ),
+    );
+    setEmploymentOpen(false);
+    toast.success("Employment information updated");
+  };
+
   return (
     <div>
       <PageHeader
@@ -392,12 +638,14 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                 <div>
                   <h2 className="font-display text-2xl font-semibold">Employee List</h2>
                   <p className="text-xs text-muted-foreground">
-                    {selected.length > 0
-                      ? `${selected.length} selected for bulk generation.`
-                      : "Select employees to generate documents in bulk."}
+                    {listView === "archived"
+                      ? "Records inactive/unmodified for 10+ years (DOLE/BIR retention). Hidden from the default list."
+                      : selected.length > 0
+                        ? `${selected.length} selected for bulk generation.`
+                        : "Select employees to generate documents in bulk."}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -420,19 +668,53 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                       ))}
                     </SelectContent>
                   </Select>
+                  <Select
+                    value={listView}
+                    onValueChange={(v) => setListView(v as "active" | "archived")}
+                  >
+                    <SelectTrigger className="w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active records</SelectItem>
+                      <SelectItem value="archived">
+                        Archived ({archiveYears}+ years) · {archivedIds.length}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button
-                    size="sm"
-                    disabled={selected.length === 0}
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    title={`Auto-archive settings (${archiveYears}+ years)`}
+                    aria-label="Auto-archive settings"
                     onClick={() => {
-                      setBulkTypes([documentTypes[0]!]);
-                      setBulkPickOpen(true);
+                      setArchiveDraft(archiveYears);
+                      setArchiveOpen(true);
                     }}
                   >
-                    <Download className="mr-2 h-4 w-4" /> Bulk generate
+                    <Archive className="h-4 w-4" />
                   </Button>
-                  <Button size="sm" onClick={() => setAddOpen(true)}>
-                    <Plus className="mr-2 h-4 w-4" /> Add employee
-                  </Button>
+
+
+
+                  {listView === "active" && (
+                    <>
+                      <Button
+                        size="sm"
+                        disabled={selected.length === 0}
+                        onClick={() => {
+                          setBulkTypes([documentTypes[0]!]);
+                          setBulkPickOpen(true);
+                        }}
+                      >
+                        <Download className="mr-2 h-4 w-4" /> Bulk generate
+                      </Button>
+                      <Button size="sm" onClick={() => setAddOpen(true)}>
+                        <Plus className="mr-2 h-4 w-4" /> Add employee
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -441,17 +723,53 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-10" />
-                      <TableHead>Employee</TableHead>
-                      <TableHead>Position</TableHead>
-                      <TableHead>Department</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Date Hired</TableHead>
-                      <TableHead>Status</TableHead>
+                      <SortHead
+                        sortKey="employee"
+                        sort={employeeSort.sort}
+                        onSort={employeeSort.toggle}
+                      >
+                        Employee
+                      </SortHead>
+                      <SortHead
+                        sortKey="position"
+                        sort={employeeSort.sort}
+                        onSort={employeeSort.toggle}
+                      >
+                        Position
+                      </SortHead>
+                      <SortHead
+                        sortKey="department"
+                        sort={employeeSort.sort}
+                        onSort={employeeSort.toggle}
+                      >
+                        Department
+                      </SortHead>
+                      <SortHead
+                        sortKey="type"
+                        sort={employeeSort.sort}
+                        onSort={employeeSort.toggle}
+                      >
+                        Type
+                      </SortHead>
+                      <SortHead
+                        sortKey="dateHired"
+                        sort={employeeSort.sort}
+                        onSort={employeeSort.toggle}
+                      >
+                        Date Hired
+                      </SortHead>
+                      <SortHead
+                        sortKey="status"
+                        sort={employeeSort.sort}
+                        onSort={employeeSort.toggle}
+                      >
+                        Status
+                      </SortHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((e) => (
+                    {employeePage.pageItems.map((e) => (
                       <TableRow key={e.id}>
                         <TableCell>
                           <Checkbox
@@ -479,35 +797,75 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                           {e.dateHired}
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              e.status === "Active"
-                                ? "border-success/30 bg-success/15 text-success"
-                                : "border-muted-foreground/30 bg-muted text-muted-foreground"
-                            }
-                          >
-                            {e.status}
-                          </Badge>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge
+                              variant="outline"
+                              className={
+                                e.status === "Active"
+                                  ? "border-success/30 bg-success/15 text-success"
+                                  : "border-muted-foreground/30 bg-muted text-muted-foreground"
+                              }
+                            >
+                              {e.status}
+                            </Badge>
+                            {archivedIds.includes(e.id) && (
+                              <Badge
+                                variant="outline"
+                                className="border-gold/40 bg-gold-soft text-foreground"
+                                title={`Last updated ${lastUpdatedFor(e.id)}`}
+                              >
+                                Archived · since {lastUpdatedFor(e.id)}
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setProfileId(e.id);
-                              setProfileTab("personal");
-                              setHistoryFormOpen(false);
-                            }}
-                          >
-                            View 201 file
-                          </Button>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setProfileId(e.id);
+                                setProfileTab("personal");
+                                setHistoryFormOpen(false);
+                              }}
+                            >
+                              View 201 file
+                            </Button>
+                            {isSuper &&
+                              (archivedIds.includes(e.id) ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => restoreEmployee(e.id)}
+                                >
+                                  <ArchiveRestore className="mr-2 h-3.5 w-3.5" /> Restore
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => archiveEmployee(e.id)}
+                                >
+                                  <Archive className="mr-2 h-3.5 w-3.5" /> Archive
+                                </Button>
+                              ))}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
+              <TablePagination
+                page={employeePage.page}
+                pageCount={employeePage.pageCount}
+                from={employeePage.from}
+                to={employeePage.to}
+                total={employeePage.total}
+                label="employees"
+                onPageChange={employeePage.setPage}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -522,7 +880,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                     Log of who added, edited, or deleted employee records and files.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -532,6 +890,19 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                       onChange={(e) => setLogSearch(e.target.value)}
                     />
                   </div>
+                  <Select value={logDept} onValueChange={setLogDept}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="All departments" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All departments</SelectItem>
+                      {departments.map((d) => (
+                        <SelectItem key={d.code} value={d.name}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select value={logAction} onValueChange={setLogAction}>
                     <SelectTrigger className="w-44">
                       <SelectValue placeholder="All actions" />
@@ -550,62 +921,142 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Timestamp</TableHead>
-                      <TableHead>Actor</TableHead>
-                      <TableHead>Action</TableHead>
-                      <TableHead>Target Record / File</TableHead>
-                      <TableHead>Notes</TableHead>
+                      <SortHead sortKey="timestamp" sort={logSort.sort} onSort={logSort.toggle}>
+                        Timestamp
+                      </SortHead>
+                      <SortHead sortKey="actor" sort={logSort.sort} onSort={logSort.toggle}>
+                        Actor
+                      </SortHead>
+                      <SortHead sortKey="action" sort={logSort.sort} onSort={logSort.toggle}>
+                        Action
+                      </SortHead>
+                      <SortHead sortKey="department" sort={logSort.sort} onSort={logSort.toggle}>
+                        Department
+                      </SortHead>
+                      <SortHead sortKey="target" sort={logSort.sort} onSort={logSort.toggle}>
+                        Target Record / File
+                      </SortHead>
+                      <SortHead sortKey="notes" sort={logSort.sort} onSort={logSort.toggle}>
+                        Notes
+                      </SortHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recordLogs
-                      .filter(
-                        (l) =>
-                          (logAction === "all" || l.action === logAction) &&
-                          `${l.actor} ${l.target} ${l.notes}`
-                            .toLowerCase()
-                            .includes(logSearch.toLowerCase()),
-                      )
-                      .map((l) => (
-                        <TableRow key={l.id}>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {l.timestamp}
-                          </TableCell>
-                          <TableCell className="text-sm">{l.actor}</TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={
-                                l.action === "Added"
-                                  ? "border-success/30 bg-success/15 text-success"
-                                  : l.action === "Edited"
-                                    ? "border-gold/40 bg-gold-soft text-foreground"
-                                    : "border-destructive/30 bg-destructive/15 text-destructive"
-                              }
-                            >
-                              {l.action}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm">{l.target}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {l.notes}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                    {logPage.pageItems.map((l) => (
+                      <TableRow key={l.id}>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {l.timestamp}
+                        </TableCell>
+                        <TableCell className="text-sm">{l.actor}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={
+                              l.action === "Added"
+                                ? "border-success/30 bg-success/15 text-success"
+                                : l.action === "Edited"
+                                  ? "border-gold/40 bg-gold-soft text-foreground"
+                                  : "border-destructive/30 bg-destructive/15 text-destructive"
+                            }
+                          >
+                            {l.action}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">{l.department}</TableCell>
+                        <TableCell className="text-sm">{l.target}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{l.notes}</TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </div>
+              <TablePagination
+                page={logPage.page}
+                pageCount={logPage.pageCount}
+                from={logPage.from}
+                to={logPage.to}
+                total={logPage.total}
+                label="log entries"
+                onPageChange={logPage.setPage}
+              />
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* AUTO-ARCHIVE SETTINGS */}
+      <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl">Auto-archive settings</DialogTitle>
+            <DialogDescription>
+              Records left unmodified for the retention period below are moved to the Archived list
+              automatically. Manually archived records stay archived.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="archive-years">Auto-archive after (years)</Label>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                aria-label="Decrease archive years"
+                disabled={Number(archiveDraft) <= 1}
+                onClick={() => setArchiveDraft(String(Math.max(1, Number(archiveDraft) - 1)))}
+              >
+                <Minus className="h-4 w-4" />
+              </Button>
+              <Input
+                id="archive-years"
+                type="number"
+                min={1}
+                max={30}
+                value={archiveDraft}
+                onChange={(e) => setArchiveDraft(e.target.value)}
+                className="w-24 text-center"
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                aria-label="Increase archive years"
+                disabled={Number(archiveDraft) >= 30}
+                onClick={() => setArchiveDraft(String(Math.min(30, Number(archiveDraft) + 1)))}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-muted-foreground">years</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Currently archiving {archivedIds.length} record(s) at {archiveYears}+ years.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setArchiveOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const n = Math.min(30, Math.max(1, Number(archiveDraft) || 1));
+                applyArchiveYears(String(n));
+                setArchiveDraft(String(n));
+                setArchiveOpen(false);
+              }}
+            >
+              Save settings
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       {/* 201 FILE */}
       <Dialog open={!!profile} onOpenChange={(o) => !o && setProfileId(null)}>
         <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
           {profile &&
             (() => {
-              const p = buildProfile(profile);
+              const p = { ...buildProfile(profile), ...(personalOverrides[profile.id] ?? {}) };
               const hist = historyFor(profile);
               return (
                 <>
@@ -635,18 +1086,10 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                       <div className="mt-3 flex flex-wrap gap-2 border-b border-border pb-3">
                         {profileTab === "personal" && (
                           <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => toast.success("Personal information updated")}
-                            >
+                            <Button size="sm" variant="outline" onClick={openPersonalEdit}>
                               <Pencil className="mr-2 h-3.5 w-3.5" /> Edit personal data
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => toast.success("Employment information updated")}
-                            >
+                            <Button size="sm" variant="outline" onClick={openEmploymentEdit}>
                               <Pencil className="mr-2 h-3.5 w-3.5" /> Edit employment
                             </Button>
                             <Button
@@ -662,7 +1105,9 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => toast.success("Document uploaded to 201 file")}
+                            onClick={() =>
+                              setDocDialog({ mode: "add", index: -1, name: "", file: "" })
+                            }
                           >
                             <Plus className="mr-2 h-3.5 w-3.5" /> Add document
                           </Button>
@@ -711,7 +1156,10 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                         <Field k="Date hired" v={profile.dateHired} />
                         <Field k="Immediate supervisor" v={profile.supervisor} />
                         <Field k="Shift" v="AM Shift · 07:00 – 16:00" />
-                        <Field k="Rate" v={`${profile.employmentType} · ${p.contract.split(" · ")[0]}`} />
+                        <Field
+                          k="Rate"
+                          v={`${profile.employmentType} · ${p.contract.split(" · ")[0]}`}
+                        />
                       </Section>
 
                       {isSuper ? (
@@ -730,27 +1178,55 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
 
                     <TabsContent value="documents" className="mt-3 space-y-3">
                       <div className="space-y-1.5">
-                        {[
-                          ...p.certificates.map((d) => ({ name: d, status: "Submitted" as const })),
-                          ...p.licenses.map((d) => ({ name: d, status: "Submitted" as const })),
-                          ...p.medical.map((d) => ({ name: d, status: "Submitted" as const })),
-                          ...p.missing.map((d) => ({ name: d, status: "Missing" as const })),
-                        ].map((doc, i) => (
+                        {docsFor(profile).map((doc, i) => (
                           <div
                             key={`${doc.name}-${i}`}
-                            className="flex items-center justify-between rounded-md border border-border p-2.5"
+                            className="flex items-center justify-between gap-3 rounded-md border border-border p-2.5"
                           >
-                            <span className="text-sm">{doc.name}</span>
-                            <Badge
-                              variant="outline"
-                              className={
-                                doc.status === "Submitted"
-                                  ? "border-success/30 bg-success/15 text-success"
-                                  : "border-warning/40 bg-warning/20 text-warning-foreground"
-                              }
-                            >
-                              {doc.status}
-                            </Badge>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm">{doc.name}</p>
+                              {doc.file && (
+                                <p className="truncate text-xs text-muted-foreground">{doc.file}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant="outline"
+                                className={
+                                  doc.status === "Submitted"
+                                    ? "border-success/30 bg-success/15 text-success"
+                                    : "border-warning/40 bg-warning/20 text-warning-foreground"
+                                }
+                              >
+                                {doc.status}
+                              </Badge>
+                              {isSuper && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      setDocDialog({
+                                        mode: "edit",
+                                        index: i,
+                                        name: doc.name,
+                                        file: doc.file ?? "",
+                                      })
+                                    }
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-destructive"
+                                    onClick={() => removeDoc(i)}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -815,7 +1291,10 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                               className="flex items-center justify-between rounded-md border border-border p-2.5"
                             >
                               <div className="flex items-start gap-3">
-                                <Badge variant="secondary" className="mt-0.5 shrink-0 text-[0.65rem]">
+                                <Badge
+                                  variant="secondary"
+                                  className="mt-0.5 shrink-0 text-[0.65rem]"
+                                >
                                   {h.type}
                                 </Badge>
                                 <div>
@@ -845,7 +1324,6 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                       Export 201 file
                     </Button>
                   </DialogFooter>
-
                 </>
               );
             })()}
@@ -1010,9 +1488,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                 <Checkbox
                   checked={bulkTypes.includes(d)}
                   onCheckedChange={(v) =>
-                    setBulkTypes((prev) =>
-                      v ? [...prev, d] : prev.filter((x) => x !== d),
-                    )
+                    setBulkTypes((prev) => (v ? [...prev, d] : prev.filter((x) => x !== d)))
                   }
                 />
                 {d}
@@ -1071,6 +1547,190 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
               </div>
             ))}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* EDIT PERSONAL DATA */}
+      <Dialog open={personalOpen} onOpenChange={setPersonalOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl">Edit personal data</DialogTitle>
+            <DialogDescription>Update personal, contact and emergency details.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[
+              ["name", "Full name"],
+              ["birthDate", "Birth date"],
+              ["gender", "Gender"],
+              ["civilStatus", "Civil status"],
+              ["nationality", "Nationality"],
+              ["personalEmail", "Personal email"],
+              ["phone", "Mobile number"],
+              ["address", "Home address"],
+              ["emergencyName", "Emergency contact name"],
+              ["emergencyRelation", "Relationship"],
+              ["emergencyPhone", "Emergency contact number"],
+            ].map(([key, label]) => (
+              <div key={key} className="space-y-1.5">
+                <Label>{label}</Label>
+                <Input
+                  value={personalForm[key!] ?? ""}
+                  onChange={(e) => setPersonalForm((prev) => ({ ...prev, [key!]: e.target.value }))}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPersonalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={savePersonal}>Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* EDIT EMPLOYMENT */}
+      <Dialog open={employmentOpen} onOpenChange={setEmploymentOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl">Edit employment</DialogTitle>
+            <DialogDescription>
+              Update position, department and employment status.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Position</Label>
+              <Input
+                value={employmentForm["position"] ?? ""}
+                onChange={(e) =>
+                  setEmploymentForm((prev) => ({ ...prev, position: e.target.value }))
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Department</Label>
+              <Select
+                value={employmentForm["department"] ?? ""}
+                onValueChange={(v) => setEmploymentForm((prev) => ({ ...prev, department: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((d) => (
+                    <SelectItem key={d.code} value={d.name}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select
+                value={employmentForm["status"] ?? ""}
+                onValueChange={(v) => setEmploymentForm((prev) => ({ ...prev, status: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["Active", "On Leave", "Separated"].map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Employment type</Label>
+              <Input
+                value={employmentForm["employmentType"] ?? ""}
+                onChange={(e) =>
+                  setEmploymentForm((prev) => ({ ...prev, employmentType: e.target.value }))
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date hired</Label>
+              <Input
+                type="date"
+                value={employmentForm["dateHired"] ?? ""}
+                onChange={(e) =>
+                  setEmploymentForm((prev) => ({ ...prev, dateHired: e.target.value }))
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Immediate supervisor</Label>
+              <Input
+                value={employmentForm["supervisor"] ?? ""}
+                onChange={(e) =>
+                  setEmploymentForm((prev) => ({ ...prev, supervisor: e.target.value }))
+                }
+              />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Company email</Label>
+              <Input
+                value={employmentForm["email"] ?? ""}
+                onChange={(e) => setEmploymentForm((prev) => ({ ...prev, email: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmploymentOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveEmployment}>Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ADD / EDIT DOCUMENT */}
+      <Dialog open={!!docDialog} onOpenChange={(o) => !o && setDocDialog(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl">
+              {docDialog?.mode === "edit" ? "Edit document" : "Add document"}
+            </DialogTitle>
+            <DialogDescription>Rename the document or attach a replacement file.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Document name</Label>
+              <Input
+                value={docDialog?.name ?? ""}
+                onChange={(e) =>
+                  setDocDialog((prev) => (prev ? { ...prev, name: e.target.value } : prev))
+                }
+                placeholder="NBI Clearance (2026)"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>File</Label>
+              <Input
+                type="file"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  setDocDialog((prev) => (prev ? { ...prev, file: f?.name ?? prev.file } : prev));
+                }}
+              />
+              {docDialog?.file && (
+                <p className="text-xs text-muted-foreground">Current file: {docDialog.file}</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDocDialog(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveDoc}>
+              {docDialog?.mode === "edit" ? "Save changes" : "Add document"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

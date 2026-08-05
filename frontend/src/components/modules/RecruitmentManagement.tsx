@@ -1,6 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   Briefcase,
+  ChevronsUpDown,
   Copy,
   Facebook,
   Globe,
@@ -17,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useBlocker } from "@tanstack/react-router";
 
 import { PageHeader } from "@/components/portal/PageHeader";
 import { StatCard } from "@/components/portal/StatCard";
@@ -43,10 +47,14 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TablePagination } from "@/components/ui/table-pagination";
+import { DEFAULT_PAGE_SIZE } from "@/hooks/usePagination";
 import { Textarea } from "@/components/ui/textarea";
 import { jobs as seedJobs, peso, type Job } from "@/data/jobs";
 import { departments } from "@/data/hr";
 import { requisitionStore, useRequisitions } from "@/data/requisitions";
+import { useSort } from "@/components/portal/sortable";
+import { cn } from "@/lib/utils";
 
 const templates = [
   {
@@ -174,6 +182,41 @@ function jobToDraft(j: Job): Draft {
   };
 }
 
+function hasContentFor(id: BlockId, d: Draft): boolean {
+  switch (id) {
+    case "title":
+      return d.title.trim() !== "";
+    case "info":
+      return (
+        d.salaryMin.trim() !== "" ||
+        d.salaryMax.trim() !== "" ||
+        (d.vacancies.trim() !== "" && d.vacancies !== "1")
+      );
+    case "description":
+      return d.description.trim() !== "";
+    case "responsibilities":
+      return d.responsibilities.trim() !== "";
+    case "qualifications":
+      return d.qualifications.trim() !== "";
+    case "skills":
+      return d.skills.trim() !== "";
+    case "benefits":
+      return d.benefits.trim() !== "";
+    case "instructions":
+      return d.instructions.trim() !== "";
+    case "about":
+      return d.about.trim() !== "";
+    case "social":
+      return d.social.trim() !== "";
+    default:
+      return false;
+  }
+}
+
+function snapshotOf(d: Draft, b: BlockId[]) {
+  return JSON.stringify({ d, b });
+}
+
 export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }) {
   const [jobList, setJobList] = useState<Job[]>(seedJobs);
   const [tab, setTab] = useState("postings");
@@ -187,6 +230,13 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [deptFilter, setDeptFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [reqSearch, setReqSearch] = useState("");
+  const [reqStatus, setReqStatus] = useState("all");
+  const [reqDept, setReqDept] = useState("all");
+  const [reqUrgency, setReqUrgency] = useState("all");
+  const [reqPage, setReqPage] = useState(1);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [sourceReqId, setSourceReqId] = useState<string | null>(null);
 
@@ -201,6 +251,41 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
   });
   const [preview, setPreview] = useState("Website");
 
+  const [deptDialogOpen, setDeptDialogOpen] = useState(false);
+  const [pendingDept, setPendingDept] = useState(departments[0]?.name ?? "Front Office");
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
+  const [pendingTab, setPendingTab] = useState<string | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = useState<string>(snapshotOf(blankDraft, []));
+
+  const canSaveDraft = useMemo(
+    () => blocks.some((id) => hasContentFor(id, draft)),
+    [blocks, draft],
+  );
+  const isDirty = useMemo(
+    () => tab === "builder" && canSaveDraft && snapshotOf(draft, blocks) !== savedSnapshot,
+    [tab, canSaveDraft, draft, blocks, savedSnapshot],
+  );
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!isDirty) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  const routeBlocker = useBlocker({
+    shouldBlockFn: () => isDirty,
+    withResolver: true,
+  });
+
+  const saveDraftAction = () => {
+    setSavedSnapshot(snapshotOf(draft, blocks));
+    toast.success("Draft saved");
+  };
+
   const toggleActive = (id: string) =>
     setJobList((prev) =>
       prev.map((j) =>
@@ -213,7 +298,11 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
   const totalVacancies = jobList.reduce((t, j) => t + j.vacancies, 0);
   const totalFilled = jobList.reduce((t, j) => t + j.filled, 0);
 
-  const lines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
+  const lines = (s: string) =>
+    s
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean);
 
   const applyTemplate = (id: string) => {
     const t = templates.find((x) => x.id === id);
@@ -246,9 +335,10 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
       salaryMin: Number(draft.salaryMin) || 0,
       salaryMax: Number(draft.salaryMax) || 0,
       vacancies: Number(draft.vacancies) || 1,
-      filled: editingJobId ? jobList.find((j) => j.id === editingJobId)?.filled ?? 0 : 0,
+      filled: editingJobId ? (jobList.find((j) => j.id === editingJobId)?.filled ?? 0) : 0,
       posted: editingJobId
-        ? jobList.find((j) => j.id === editingJobId)?.posted ?? new Date().toISOString().slice(0, 10)
+        ? (jobList.find((j) => j.id === editingJobId)?.posted ??
+          new Date().toISOString().slice(0, 10))
         : new Date().toISOString().slice(0, 10),
       status: chosen.length ? "Open" : "Draft",
       active: chosen.length > 0,
@@ -260,12 +350,14 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
       qualifications: lines(draft.qualifications),
       skills: lines(draft.skills),
       benefits: lines(draft.benefits),
-      applicants: editingJobId ? jobList.find((j) => j.id === editingJobId)?.applicants ?? 0 : 0,
+      applicants: editingJobId ? (jobList.find((j) => j.id === editingJobId)?.applicants ?? 0) : 0,
       platforms: chosen,
     };
 
     setJobList((prev) =>
-      editingJobId ? prev.map((j) => (j.id === editingJobId ? jobPayload : j)) : [jobPayload, ...prev],
+      editingJobId
+        ? prev.map((j) => (j.id === editingJobId ? jobPayload : j))
+        : [jobPayload, ...prev],
     );
     if (sourceReqId) {
       requisitionStore.update(sourceReqId, { status: "Converted" });
@@ -280,34 +372,43 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
     );
     setEditingJobId(null);
     setSourceReqId(null);
+    setSavedSnapshot(snapshotOf(blankDraft, []));
   };
 
-  const startNewPost = () => {
-    setDraft(blankDraft);
+  const startNewPost = (department: string) => {
+    const seeded: Draft = { ...blankDraft, department };
+    setDraft(seeded);
     setBlocks([]);
     setEditingJobId(null);
     setSourceReqId(null);
     setMode("custom");
     setNewOpen(false);
+    setDeptDialogOpen(false);
+    setSavedSnapshot(snapshotOf(seeded, []));
     setTab("builder");
+    setPendingTab(null);
   };
 
   const editTemplate = (job: Job) => {
-    setDraft(jobToDraft(job));
+    const seeded = jobToDraft(job);
+    setDraft(seeded);
     setBlocks(fullBlocks);
     setEditingJobId(job.id);
     setSourceReqId(null);
     setMode("template");
+    setSavedSnapshot(snapshotOf(seeded, fullBlocks));
     setTab("builder");
     toast.message(`Editing template for “${job.title}”`);
   };
 
   const copyAndUseTemplate = (job: Job) => {
-    setDraft(jobToDraft(job));
+    const seeded = jobToDraft(job);
+    setDraft(seeded);
     setBlocks(fullBlocks);
     setEditingJobId(null);
     setSourceReqId(null);
     setMode("template");
+    setSavedSnapshot(snapshotOf(seeded, fullBlocks));
     setTab("builder");
     toast.message(`Copied “${job.title}” — publish as a new posting`);
   };
@@ -315,19 +416,23 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
   const convertRequisition = (reqId: string) => {
     const req = requisitions.find((r) => r.id === reqId);
     if (!req) return;
-    setDraft({
+    const seeded: Draft = {
       ...blankDraft,
       title: req.position,
       department: req.department,
       vacancies: String(req.count),
       description: `We are looking for ${req.count} ${req.position}(s) to join our ${req.department} team.`,
-    });
+    };
+    setDraft(seeded);
     setBlocks(fullBlocks);
     setEditingJobId(null);
     setSourceReqId(reqId);
     setMode("template");
+    setSavedSnapshot(snapshotOf(seeded, fullBlocks));
     setTab("builder");
-    toast.message(`Building a job post from requisition ${req.id} — it stays pending until you publish`);
+    toast.message(
+      `Building a job post from requisition ${req.id} — it stays pending until you publish`,
+    );
   };
 
   const addBlock = (id: BlockId) => {
@@ -351,17 +456,134 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
   const openCount = useMemo(() => jobList.filter((j) => j.active).length, [jobList]);
 
   const filteredJobs = useMemo(() => {
+    const now = new Date();
+    const cutoffFor = (f: string) => {
+      if (f === "7") return new Date(now.getTime() - 7 * 86400000);
+      if (f === "30") return new Date(now.getTime() - 30 * 86400000);
+      if (f === "90") return new Date(now.getTime() - 90 * 86400000);
+      if (f === "year") return new Date(now.getFullYear(), 0, 1);
+      return null;
+    };
+    const cutoff = cutoffFor(dateFilter);
     return jobList.filter((j) => {
       const q = search.trim().toLowerCase();
       const matchesSearch =
         !q || j.title.toLowerCase().includes(q) || j.department.toLowerCase().includes(q);
       const matchesStatus = statusFilter === "all" || j.status === statusFilter;
       const matchesDept = deptFilter === "all" || j.department === deptFilter;
-      return matchesSearch && matchesStatus && matchesDept;
+      const matchesDate = !cutoff || new Date(`${j.posted}T00:00:00`) >= cutoff;
+      return matchesSearch && matchesStatus && matchesDept && matchesDate;
     });
-  }, [jobList, search, statusFilter, deptFilter]);
+  }, [jobList, search, statusFilter, deptFilter, dateFilter]);
+
+  const listSort = useSort(filteredJobs, {
+    title: (j: Job) => j.title,
+    department: (j: Job) => j.department,
+    status: (j: Job) => j.status,
+    salary: (j: Job) => j.salaryMin,
+    filled: (j: Job) => j.filled,
+    posted: (j: Job) => j.posted,
+  });
+
+  const PAGE_SIZE = DEFAULT_PAGE_SIZE;
+  const pageCount = Math.max(1, Math.ceil(listSort.sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pagedJobs = listSort.sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, deptFilter, dateFilter]);
+
+  const listGridCols = "grid-cols-[minmax(220px,1.4fr)_110px_150px_190px_210px_110px_190px]";
+
+  function ListSortHead({
+    sortKey,
+    children,
+    align = "left",
+  }: {
+    sortKey: "title" | "department" | "status" | "salary" | "filled" | "posted";
+    children: ReactNode;
+    align?: "left" | "right" | "center";
+  }) {
+    const active = listSort.sort?.key === sortKey;
+    const Icon = !active ? ChevronsUpDown : listSort.sort?.dir === "asc" ? ArrowUp : ArrowDown;
+    return (
+      <button
+        type="button"
+        onClick={() => listSort.toggle(sortKey)}
+        className={cn(
+          "flex items-center gap-1.5 text-left text-[0.65rem] font-semibold uppercase tracking-wide transition-colors hover:text-foreground",
+          active ? "text-foreground" : "text-muted-foreground",
+          align === "right" && "justify-end text-right",
+          align === "center" && "justify-center text-center",
+        )}
+      >
+        <span>{children}</span>
+        <Icon className={cn("h-3 w-3 shrink-0", active ? "opacity-100" : "opacity-40")} />
+      </button>
+    );
+  }
 
   const pendingRequisitions = requisitions.filter((r) => r.status !== "Converted");
+
+  /** A requisition counts as new when raised within a week of the latest request. */
+  const latestReqTime = Math.max(
+    ...requisitions.map((r) => new Date(r.requestedAt).getTime()).filter((t) => !Number.isNaN(t)),
+    0,
+  );
+  const isNewRequisition = (requestedAt: string) =>
+    latestReqTime - new Date(requestedAt).getTime() <= 7 * 24 * 60 * 60 * 1000;
+
+  const reqUrgencies = Array.from(new Set(requisitions.map((r) => r.urgency)));
+  const filteredRequisitions = pendingRequisitions.filter((r) => {
+    const q = reqSearch.trim().toLowerCase();
+    const matchesSearch =
+      !q ||
+      `${r.id} ${r.position} ${r.department} ${r.urgency} ${r.justification}`
+        .toLowerCase()
+        .includes(q);
+    return (
+      matchesSearch &&
+      (reqStatus === "all" || r.status === reqStatus) &&
+      (reqDept === "all" || r.department === reqDept) &&
+      (reqUrgency === "all" || r.urgency === reqUrgency)
+    );
+  });
+  const REQ_PER_PAGE = DEFAULT_PAGE_SIZE;
+  const reqPageCount = Math.max(1, Math.ceil(filteredRequisitions.length / REQ_PER_PAGE));
+  const reqPageSafe = Math.min(reqPage, reqPageCount);
+  const visibleRequisitions = filteredRequisitions.slice(
+    (reqPageSafe - 1) * REQ_PER_PAGE,
+    reqPageSafe * REQ_PER_PAGE,
+  );
+
+
+  const handleTabChange = (value: string) => {
+    if (tab === "builder" && value !== "builder" && isDirty) {
+      setPendingTab(value);
+      setConfirmLeaveOpen(true);
+      return;
+    }
+    if (value === "builder" && !editingJobId && !sourceReqId && blocks.length === 0) {
+      setPendingDept(departments[0]?.name ?? "Front Office");
+      setDeptDialogOpen(true);
+      return;
+    }
+    setTab(value);
+  };
+
+  const confirmLeaveSave = () => {
+    saveDraftAction();
+    setConfirmLeaveOpen(false);
+    if (pendingTab) setTab(pendingTab);
+    setPendingTab(null);
+  };
+
+  const confirmLeaveDiscard = () => {
+    setSavedSnapshot(snapshotOf(draft, blocks));
+    setConfirmLeaveOpen(false);
+    if (pendingTab) setTab(pendingTab);
+    setPendingTab(null);
+  };
 
   const renderFullPreview = () => (
     <div className="space-y-3">
@@ -490,7 +712,7 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
         />
       </div>
 
-      <Tabs value={tab} onValueChange={setTab} className="mt-6">
+      <Tabs value={tab} onValueChange={handleTabChange} className="mt-6">
         <TabsList className="flex h-auto flex-wrap justify-start">
           <TabsTrigger value="postings">Vacancies & Postings</TabsTrigger>
           <TabsTrigger value="builder">Job Post Builder</TabsTrigger>
@@ -501,215 +723,254 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
         </TabsList>
 
         <TabsContent value="postings" className="mt-4 space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative w-full max-w-xs">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search posted positions…"
-                className="pl-8"
-              />
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="Open">Open</SelectItem>
-                <SelectItem value="Closed">Closed</SelectItem>
-                <SelectItem value="Draft">Draft</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={deptFilter} onValueChange={setDeptFilter}>
-              <SelectTrigger className="w-52">
-                <SelectValue placeholder="Department" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All departments</SelectItem>
-                {departments.map((d) => (
-                  <SelectItem key={d.code} value={d.name}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
-              <Button
-                type="button"
-                size="icon"
-                variant={viewMode === "list" ? "secondary" : "ghost"}
-                className="h-7 w-7"
-                onClick={() => setViewMode("list")}
-                aria-label="List view"
-              >
-                <List className="h-4 w-4" />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-display text-lg font-semibold">Vacancies &amp; Postings</h2>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <div className="relative w-56">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search posted positions…"
+                  className="pl-8"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="Open">Open</SelectItem>
+                  <SelectItem value="Closed">Closed</SelectItem>
+                  <SelectItem value="Draft">Draft</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={deptFilter} onValueChange={setDeptFilter}>
+                <SelectTrigger className="w-44">
+                  <SelectValue placeholder="Department" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All departments</SelectItem>
+                  {departments.map((d) => (
+                    <SelectItem key={d.code} value={d.name}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={dateFilter} onValueChange={setDateFilter}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Date posted" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Any time</SelectItem>
+                  <SelectItem value="7">Last 7 days</SelectItem>
+                  <SelectItem value="30">Last 30 days</SelectItem>
+                  <SelectItem value="90">Last 90 days</SelectItem>
+                  <SelectItem value="year">This year</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant={viewMode === "list" ? "secondary" : "ghost"}
+                  className="h-7 w-7"
+                  onClick={() => setViewMode("list")}
+                  aria-label="List view"
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant={viewMode === "grid" ? "secondary" : "ghost"}
+                  className="h-7 w-7"
+                  onClick={() => setViewMode("grid")}
+                  aria-label="Grid view"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </Button>
+              </div>
+              <Button onClick={() => setNewOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> New job post
               </Button>
-              <Button
-                type="button"
-                size="icon"
-                variant={viewMode === "grid" ? "secondary" : "ghost"}
-                className="h-7 w-7"
-                onClick={() => setViewMode("grid")}
-                aria-label="Grid view"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
             </div>
-            <Button size="sm" className="ml-auto" onClick={() => setNewOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" /> New job post
-            </Button>
           </div>
 
           <div
             className={
-              viewMode === "grid"
-                ? "grid gap-4 md:grid-cols-2 xl:grid-cols-3"
-                : "space-y-2"
+              viewMode === "grid" ? "grid gap-4 md:grid-cols-2 xl:grid-cols-3" : "space-y-2"
             }
           >
-            {viewMode === "list" &&
-              filteredJobs.map((j) => {
+            {viewMode === "list" && (
+              <div className="space-y-2">
+                <div
+                  className={cn(
+                    "hidden items-center gap-3 rounded-md border border-transparent px-3 py-1.5 md:grid",
+                    listGridCols,
+                  )}
+                >
+                  <ListSortHead sortKey="title">Position</ListSortHead>
+                  <ListSortHead sortKey="status">Status</ListSortHead>
+                  <ListSortHead sortKey="salary">Salary</ListSortHead>
+                  <ListSortHead sortKey="filled">Filled</ListSortHead>
+                  <span className="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Published to
+                  </span>
+                  <ListSortHead sortKey="posted">Posted</ListSortHead>
+                  <span className="text-right text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Actions
+                  </span>
+                </div>
+                {pagedJobs.map((j) => {
+                  const pct = Math.min(
+                    100,
+                    Math.round((j.filled / Math.max(1, j.vacancies)) * 100),
+                  );
+                  return (
+                    <Card
+                      key={j.id}
+                      className={j.active ? "border-success/40" : "border-border/70 opacity-80"}
+                    >
+                      <CardContent className={cn("grid items-center gap-3 p-3", listGridCols)}>
+                        <div className="min-w-0">
+                          <p className="eyebrow truncate">{j.department}</p>
+                          <h3 className="truncate font-display text-base font-semibold leading-tight">
+                            {j.title}
+                          </h3>
+                          <p className="truncate text-[0.7rem] text-muted-foreground">
+                            {j.employmentType} · {j.schedule}
+                          </p>
+                        </div>
+                        <div>
+                          <Badge
+                            variant="outline"
+                            className={
+                              j.status === "Open"
+                                ? "border-success/30 bg-success/15 text-success"
+                                : "border-border"
+                            }
+                          >
+                            {j.status}
+                          </Badge>
+                        </div>
+                        <p className="truncate text-xs font-medium">
+                          {peso(j.salaryMin)} – {peso(j.salaryMax)}
+                        </p>
+                        <div>
+                          <div className="flex justify-between text-[0.65rem] text-muted-foreground">
+                            <span>
+                              {j.filled}/{j.vacancies} filled
+                            </span>
+                            <span>{j.applicants} applicants</span>
+                          </div>
+                          <Progress value={pct} className="mt-1 h-1.5" />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {j.platforms.map((p) => (
+                            <Badge key={p} variant="secondary" className="text-[0.6rem]">
+                              {p}
+                            </Badge>
+                          ))}
+                        </div>
+                        <span className="truncate text-[0.65rem] text-muted-foreground">
+                          Posted {j.posted}
+                        </span>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button size="sm" variant="outline" onClick={() => editTemplate(j)}>
+                            Edit
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => copyAndUseTemplate(j)}>
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                          <Switch
+                            checked={j.active}
+                            onCheckedChange={() => toggleActive(j.id)}
+                            aria-label={`Toggle posting for ${j.title}`}
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+            {viewMode === "grid" &&
+              pagedJobs.map((j) => {
                 const pct = Math.min(100, Math.round((j.filled / Math.max(1, j.vacancies)) * 100));
                 return (
                   <Card
                     key={j.id}
                     className={j.active ? "border-success/40" : "border-border/70 opacity-80"}
                   >
-                    <CardContent className="flex flex-wrap items-center gap-4 p-3">
-                      <div className="min-w-[180px] flex-1">
-                        <p className="eyebrow">{j.department}</p>
-                        <h3 className="font-display text-base font-semibold leading-tight">
-                          {j.title}
-                        </h3>
-                        <p className="text-[0.7rem] text-muted-foreground">
-                          {j.employmentType} · {j.schedule}
-                        </p>
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="eyebrow">{j.department}</p>
+                          <h3 className="font-display text-xl font-semibold">{j.title}</h3>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {j.employmentType} · {j.schedule}
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={
+                            j.status === "Open"
+                              ? "border-success/30 bg-success/15 text-success"
+                              : "border-border"
+                          }
+                        >
+                          {j.status}
+                        </Badge>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className={
-                          j.status === "Open"
-                            ? "border-success/30 bg-success/15 text-success"
-                            : "border-border"
-                        }
-                      >
-                        {j.status}
-                      </Badge>
-                      <p className="w-32 text-xs font-medium">
+
+                      <p className="mt-3 text-sm font-medium">
                         {peso(j.salaryMin)} – {peso(j.salaryMax)}
                       </p>
-                      <div className="w-36">
-                        <div className="flex justify-between text-[0.65rem] text-muted-foreground">
-                          <span>{j.filled}/{j.vacancies} filled</span>
-                          <span>{j.applicants} applicants</span>
-                        </div>
-                        <Progress value={pct} className="mt-1 h-1.5" />
+
+                      <div className="mt-3 flex justify-between text-xs text-muted-foreground">
+                        <span>
+                          {j.filled} filled of {j.vacancies}
+                        </span>
+                        <span>{j.applicants} applicants</span>
                       </div>
-                      <div className="flex flex-wrap gap-1">
+                      <Progress value={pct} className="mt-2 h-2" />
+
+                      <div className="mt-3 flex flex-wrap gap-1">
                         {j.platforms.map((p) => (
-                          <Badge key={p} variant="secondary" className="text-[0.6rem]">
+                          <Badge key={p} variant="secondary" className="text-[0.65rem]">
                             {p}
                           </Badge>
                         ))}
                       </div>
-                      <span className="text-[0.65rem] text-muted-foreground">Posted {j.posted}</span>
-                      <div className="flex items-center gap-2">
+
+                      <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-3">
                         <Button size="sm" variant="outline" onClick={() => editTemplate(j)}>
-                          Edit
+                          Edit Template
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => copyAndUseTemplate(j)}>
-                          <Copy className="h-3.5 w-3.5" />
+                          <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy & Use Template
                         </Button>
-                        <Switch
-                          checked={j.active}
-                          onCheckedChange={() => toggleActive(j.id)}
-                          aria-label={`Toggle posting for ${j.title}`}
-                        />
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">Posted {j.posted}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium">
+                            {j.active ? "Open" : "Closed"}
+                          </span>
+                          <Switch
+                            checked={j.active}
+                            onCheckedChange={() => toggleActive(j.id)}
+                            aria-label={`Toggle posting for ${j.title}`}
+                          />
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
                 );
-              })}
-            {viewMode === "grid" &&
-              filteredJobs.map((j) => {
-              const pct = Math.min(100, Math.round((j.filled / Math.max(1, j.vacancies)) * 100));
-              return (
-                <Card
-                  key={j.id}
-                  className={
-                    j.active ? "border-success/40" : "border-border/70 opacity-80"
-                  }
-                >
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="eyebrow">{j.department}</p>
-                        <h3 className="font-display text-xl font-semibold">{j.title}</h3>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {j.employmentType} · {j.schedule}
-                        </p>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className={
-                          j.status === "Open"
-                            ? "border-success/30 bg-success/15 text-success"
-                            : "border-border"
-                        }
-                      >
-                        {j.status}
-                      </Badge>
-                    </div>
-
-                    <p className="mt-3 text-sm font-medium">
-                      {peso(j.salaryMin)} – {peso(j.salaryMax)}
-                    </p>
-
-                    <div className="mt-3 flex justify-between text-xs text-muted-foreground">
-                      <span>
-                        {j.filled} filled of {j.vacancies}
-                      </span>
-                      <span>{j.applicants} applicants</span>
-                    </div>
-                    <Progress value={pct} className="mt-2 h-2" />
-
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      {j.platforms.map((p) => (
-                        <Badge key={p} variant="secondary" className="text-[0.65rem]">
-                          {p}
-                        </Badge>
-                      ))}
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-3">
-                      <Button size="sm" variant="outline" onClick={() => editTemplate(j)}>
-                        Edit Template
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => copyAndUseTemplate(j)}>
-                        <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy & Use Template
-                      </Button>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">
-                        Posted {j.posted}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium">
-                          {j.active ? "Open" : "Closed"}
-                        </span>
-                        <Switch
-                          checked={j.active}
-                          onCheckedChange={() => toggleActive(j.id)}
-                          aria-label={`Toggle posting for ${j.title}`}
-                        />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
               })}
             {filteredJobs.length === 0 && (
               <Card className="border-border/70 md:col-span-2 xl:col-span-3">
@@ -719,24 +980,110 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
               </Card>
             )}
           </div>
+
+          <TablePagination
+            page={safePage}
+            pageCount={pageCount}
+            from={filteredJobs.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}
+            to={Math.min(safePage * PAGE_SIZE, filteredJobs.length)}
+            total={filteredJobs.length}
+            label="postings"
+            onPageChange={setPage}
+          />
         </TabsContent>
 
         <TabsContent value="requisitions" className="mt-4">
           <Card className="border-border/70">
             <CardContent className="p-6">
-              <h2 className="font-display text-2xl font-semibold">Vacancy Requisitions</h2>
-              <p className="text-xs text-muted-foreground">
-                Requests raised from Core HCM's job position list, pending conversion into a job post.
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-display text-2xl font-semibold">Vacancy Requisitions</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Requests raised from Core HCM's job position list, pending conversion into a job
+                    post.
+                  </p>
+                </div>
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      className="w-56 pl-9"
+                      placeholder="Search position, department…"
+                      value={reqSearch}
+                      onChange={(e) => {
+                        setReqSearch(e.target.value);
+                        setReqPage(1);
+                      }}
+                    />
+                  </div>
+                  <Select
+                    value={reqStatus}
+                    onValueChange={(v) => {
+                      setReqStatus(v);
+                      setReqPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      <SelectItem value="Pending">Pending</SelectItem>
+                      <SelectItem value="Approved">Approved</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={reqDept}
+                    onValueChange={(v) => {
+                      setReqDept(v);
+                      setReqPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All departments</SelectItem>
+                      {departments.map((d) => (
+                        <SelectItem key={d.code} value={d.name}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={reqUrgency}
+                    onValueChange={(v) => {
+                      setReqUrgency(v);
+                      setReqPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Urgency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All urgencies</SelectItem>
+                      {reqUrgencies.map((u) => (
+                        <SelectItem key={u} value={u}>
+                          {u}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               <div className="mt-4 space-y-3">
-                {pendingRequisitions.map((r) => (
+                {visibleRequisitions.map((r) => (
                   <div
                     key={r.id}
                     className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3"
                   >
                     <div className="max-w-xl">
-                      <p className="text-sm font-medium">
+                      <p className="flex items-center gap-2 text-sm font-medium">
                         {r.position} <span className="text-muted-foreground">· {r.department}</span>
+                        {isNewRequisition(r.requestedAt) && (
+                          <Badge className="bg-primary text-primary-foreground">New</Badge>
+                        )}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {r.count} opening(s) · {r.urgency} urgency · requested {r.requestedAt}
@@ -764,45 +1111,55 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
                     </div>
                   </div>
                 ))}
-                {pendingRequisitions.length === 0 && (
+                {filteredRequisitions.length === 0 && (
                   <p className="py-8 text-center text-sm text-muted-foreground">
-                    No pending requisitions from Core HCM.
+                    No requisitions match your filters.
                   </p>
                 )}
               </div>
+              <TablePagination
+                page={reqPageSafe}
+                pageCount={reqPageCount}
+                from={
+                  filteredRequisitions.length === 0 ? 0 : (reqPageSafe - 1) * REQ_PER_PAGE + 1
+                }
+                to={Math.min(reqPageSafe * REQ_PER_PAGE, filteredRequisitions.length)}
+                total={filteredRequisitions.length}
+                label="requisitions"
+                onPageChange={setReqPage}
+              />
+
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="builder" className="mt-4">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">Create job post</span>
-                <span>›</span>
-                <span>{draft.department || "Department"}</span>
-                <span>›</span>
-                <span className="font-medium text-primary">
-                  {draft.title || "Untitled position"}
-                </span>
-              </div>
-              {sourceReqId &&
-                (() => {
-                  const sourceReq = requisitions.find((r) => r.id === sourceReqId);
-                  if (!sourceReq?.justification) return null;
-                  return (
-                    <div className="rounded-md border border-primary/20 bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-                      <p className="mb-0.5 font-medium text-foreground">
-                        Justification from Core HCM ({sourceReq.id})
-                      </p>
-                      <p className="italic">“{sourceReq.justification}”</p>
-                    </div>
-                  );
-                })()}
-              <div className="grid gap-4 xl:grid-cols-[190px_minmax(0,1fr)_360px]">
-                {/* Component palette */}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Create job post</span>
+              <span>›</span>
+              <span>{draft.department || "Department"}</span>
+              <span>›</span>
+              <span className="font-medium text-primary">{draft.title || "Untitled position"}</span>
+            </div>
+            {sourceReqId &&
+              (() => {
+                const sourceReq = requisitions.find((r) => r.id === sourceReqId);
+                if (!sourceReq?.justification) return null;
+                return (
+                  <div className="rounded-md border border-primary/20 bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+                    <p className="mb-0.5 font-medium text-foreground">
+                      Justification from Core HCM ({sourceReq.id})
+                    </p>
+                    <p className="italic">“{sourceReq.justification}”</p>
+                  </div>
+                );
+              })()}
+            <div className="grid gap-4 xl:grid-cols-[190px_minmax(0,1fr)_360px]">
+              {/* Component palette */}
               <Card className="border-border/70">
                 <CardContent className="p-3">
-                  <p className="eyebrow mb-2">Add Components</p>
+                  <p className="eyebrow mb-2 font-bold">Add Components</p>
                   <div className="space-y-1.5">
                     {blockLibrary.map((b) => (
                       <div
@@ -811,14 +1168,14 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
                         onDragStart={() => setDragging(b.id)}
                         onDragEnd={() => setDragging(null)}
                         onClick={() => addBlock(b.id)}
-                        className={`flex cursor-grab items-center gap-2 rounded-md border px-2 py-1.5 text-[0.7rem] transition ${
+                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-[0.7rem] transition ${
                           has(b.id)
                             ? "border-primary/30 bg-secondary/60"
                             : "border-border hover:border-primary/40"
                         }`}
                       >
-                        <GripVertical className="h-3 w-3 text-muted-foreground" />
-                        <span className="font-medium">{b.label}</span>
+                        <Plus className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="font-semibold">{b.label}</span>
                       </div>
                     ))}
                   </div>
@@ -827,7 +1184,7 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
                   </p>
 
                   <div className="mt-4 space-y-1.5 border-t border-border pt-3">
-                    <p className="eyebrow">Content Templates</p>
+                    <p className="eyebrow font-bold">Content Templates</p>
                     {templates.map((t) => (
                       <button
                         key={t.id}
@@ -993,7 +1350,9 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
                                   rows={2}
                                   className="text-xs"
                                   value={draft.description}
-                                  onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                                  onChange={(e) =>
+                                    setDraft({ ...draft, description: e.target.value })
+                                  }
                                   placeholder="Short pitch of the role…"
                                 />
                               )}
@@ -1098,7 +1457,12 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
                   </div>
 
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => toast("Draft saved")}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canSaveDraft}
+                      onClick={saveDraftAction}
+                    >
                       Save draft
                     </Button>
                     <Button size="sm" onClick={publish}>
@@ -1133,26 +1497,113 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
                   </Tabs>
                 </CardContent>
               </Card>
-              </div>
             </div>
-
+          </div>
         </TabsContent>
       </Tabs>
 
-      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+      <Dialog
+        open={newOpen || deptDialogOpen}
+        onOpenChange={(open) => {
+          setNewOpen(open);
+          setDeptDialogOpen(open);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New job post</DialogTitle>
+            <DialogTitle>Choose a department</DialogTitle>
             <DialogDescription>
-              Starts a blank, customizable template — add the components you need.
+              Pick which department this job post is for — it seeds the builder with a blank,
+              customizable template.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Department</Label>
+            <Select value={pendingDept} onValueChange={setPendingDept}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {departments.map((d) => (
+                  <SelectItem key={d.code} value={d.name}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setNewOpen(false);
+                setDeptDialogOpen(false);
+              }}
+            >
+              <X className="mr-2 h-4 w-4" /> Cancel
+            </Button>
+            <Button onClick={() => startNewPost(pendingDept)}>
+              <PencilRuler className="mr-2 h-4 w-4" /> Start job post
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmLeaveOpen} onOpenChange={setConfirmLeaveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save this job post as a draft?</DialogTitle>
+            <DialogDescription>
+              You have unsaved changes in the Job Post Builder. Save your progress as a draft before
+              leaving, or discard the changes.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setNewOpen(false)}>
-              <X className="mr-2 h-4 w-4" /> Cancel
+            <Button variant="ghost" onClick={() => setConfirmLeaveOpen(false)}>
+              Cancel
             </Button>
-            <Button onClick={startNewPost}>
-              <PencilRuler className="mr-2 h-4 w-4" /> Start blank job post
+            <Button variant="outline" onClick={confirmLeaveDiscard}>
+              Discard
+            </Button>
+            <Button onClick={confirmLeaveSave}>Save as draft & leave</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={routeBlocker.status === "blocked"}
+        onOpenChange={(open) => {
+          if (!open) routeBlocker.reset?.();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save this job post as a draft?</DialogTitle>
+            <DialogDescription>
+              You’re navigating away with unsaved Job Post Builder changes. Save your progress as a
+              draft before leaving, or discard the changes.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => routeBlocker.reset?.()}>
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSavedSnapshot(snapshotOf(draft, blocks));
+                routeBlocker.proceed?.();
+              }}
+            >
+              Discard
+            </Button>
+            <Button
+              onClick={() => {
+                saveDraftAction();
+                routeBlocker.proceed?.();
+              }}
+            >
+              Save as draft & leave
             </Button>
           </DialogFooter>
         </DialogContent>

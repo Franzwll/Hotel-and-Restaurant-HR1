@@ -1,18 +1,26 @@
 import { useState } from "react";
-import { ArrowLeftRight, Building2, ChevronDown, GitBranch, Plus, Search, Send, Trash2, Users } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Building2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  GitBranch,
+  Plus,
+  Search,
+  Send,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/portal/PageHeader";
 import { StatCard } from "@/components/portal/StatCard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +48,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TablePagination } from "@/components/ui/table-pagination";
+import { DEFAULT_PAGE_SIZE, usePagination } from "@/hooks/usePagination";
 import { Textarea } from "@/components/ui/textarea";
 import {
   departments as seedDepartments,
@@ -52,6 +62,7 @@ import {
 } from "@/data/hr";
 import { cn } from "@/lib/utils";
 import { requisitionStore, useRequisitions } from "@/data/requisitions";
+import { SortHead, useSort } from "@/components/portal/sortable";
 
 const initialsOf = (name: string) =>
   name
@@ -132,7 +143,6 @@ function OrgTree({
   );
 }
 
-
 export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
   const [departments, setDepartments] = useState<Department[]>(seedDepartments);
   const [positions, setPositions] = useState<Position[]>(seedPositions);
@@ -159,6 +169,13 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
   const [orgNode, setOrgNode] = useState<OrgNode | null>(null);
   const [requestFor, setRequestFor] = useState<Position | null>(null);
   const [reqForm, setReqForm] = useState({ count: 1, urgency: "Normal", justification: "" });
+
+  // Requisitions tab: filters, search, and pagination
+  const [reqDeptFilter, setReqDeptFilter] = useState("all");
+  const [reqDateFilter, setReqDateFilter] = useState("all");
+  const [reqQuery, setReqQuery] = useState("");
+  const [reqPage, setReqPage] = useState(1);
+  const REQ_PAGE_SIZE = DEFAULT_PAGE_SIZE;
 
   const totalStaff = departments.reduce((t, d) => t + d.staff, 0);
   const totalReq = departments.reduce((t, d) => t + d.openRequisitions, 0) + requisitions.length;
@@ -198,6 +215,64 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
       posMatchesQuery(p),
   );
 
+  const deptSort = useSort(visibleDepartments, {
+    name: (d: Department) => d.name,
+    head: (d: Department) => d.head,
+    staff: (d: Department) => d.staff,
+    positions: (d: Department) => positions.filter((p) => p.department === d.name).length,
+  });
+
+  const posSort = useSort(visiblePositions, {
+    title: (p: Position) => p.title,
+    department: (p: Position) => p.department,
+    level: (p: Position) => p.level,
+    headcount: (p: Position) => p.headcount,
+    filled: (p: Position) => p.filled,
+    vacant: (p: Position) => p.headcount - p.filled,
+  });
+
+  // ----- Requisitions tab derived data -----
+  const reqDeptOptions = Array.from(new Set(requisitions.map((r) => r.department))).sort();
+
+  const withinDateRange = (dateStr: string, range: string) => {
+    if (range === "all") return true;
+    const days = Number(range);
+    const diffDays = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
+    return diffDays <= days;
+  };
+
+  const rq = reqQuery.trim().toLowerCase();
+  const filteredRequisitions = requisitions.filter(
+    (r) =>
+      (reqDeptFilter === "all" || r.department === reqDeptFilter) &&
+      withinDateRange(r.requestedAt, reqDateFilter) &&
+      (!rq ||
+        r.id.toLowerCase().includes(rq) ||
+        r.position.toLowerCase().includes(rq) ||
+        r.department.toLowerCase().includes(rq) ||
+        r.status.toLowerCase().includes(rq)),
+  );
+
+  const reqSort = useSort(filteredRequisitions, {
+    id: (r) => r.id,
+    position: (r) => r.position,
+    department: (r) => r.department,
+    count: (r) => r.count,
+    urgency: (r) => r.urgency,
+    status: (r) => r.status,
+    requestedAt: (r) => r.requestedAt,
+  });
+
+  const reqTotalPages = Math.max(1, Math.ceil(reqSort.sorted.length / REQ_PAGE_SIZE));
+  const reqCurrentPage = Math.min(reqPage, reqTotalPages);
+  const reqPageRows = reqSort.sorted.slice(
+    (reqCurrentPage - 1) * REQ_PAGE_SIZE,
+    reqCurrentPage * REQ_PAGE_SIZE,
+  );
+
+  const deptPage = usePagination(deptSort.sorted);
+  const posPage = usePagination(posSort.sorted);
+
   return (
     <div>
       <PageHeader
@@ -217,6 +292,7 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
         <TabsList className="flex h-auto flex-wrap justify-start">
           <TabsTrigger value="org">Organizational Chart</TabsTrigger>
           <TabsTrigger value="dept-positions">Departments &amp; Positions</TabsTrigger>
+          <TabsTrigger value="requisitions">Requisitions</TabsTrigger>
         </TabsList>
 
         {/* ORG CHART */}
@@ -292,49 +368,93 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
                 <p className="text-xs text-muted-foreground">
                   Select a department to view its job positions.
                 </p>
-                <div className="mt-3 space-y-2">
-                  {visibleDepartments.map((d) => (
-                    <button
-                      key={d.code}
-                      type="button"
-                      onClick={() => setSelectedDept(d.name)}
-                      className={cn(
-                        "w-full rounded-md border px-3 py-2.5 text-left text-sm transition-colors",
-                        selectedDept === d.name
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/40",
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium">{d.name}</p>
-                        <Badge variant="secondary">{d.staff} staff</Badge>
-                      </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{d.description}</p>
-                      <div className="mt-2 flex items-center justify-between text-[0.7rem] text-muted-foreground">
-                        <span>Head: {d.head}</span>
-                        <span>{positions.filter((p) => p.department === d.name).length} positions</span>
-                      </div>
-                      <div className="mt-2 flex gap-2">
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditDept(d);
-                          }}
-                          className="text-[0.7rem] font-medium text-primary hover:underline"
+                <div className="mt-3 overflow-x-auto rounded-md border border-border/70">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <SortHead sortKey="name" sort={deptSort.sort} onSort={deptSort.toggle}>
+                          Department
+                        </SortHead>
+                        <SortHead sortKey="head" sort={deptSort.sort} onSort={deptSort.toggle}>
+                          Head
+                        </SortHead>
+                        <SortHead
+                          sortKey="staff"
+                          sort={deptSort.sort}
+                          onSort={deptSort.toggle}
+                          align="right"
                         >
-                          Edit
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                  {visibleDepartments.length === 0 && (
-                    <p className="py-6 text-center text-sm text-muted-foreground">
-                      No departments match your search.
-                    </p>
-                  )}
+                          Staff
+                        </SortHead>
+                        <SortHead
+                          sortKey="positions"
+                          sort={deptSort.sort}
+                          onSort={deptSort.toggle}
+                          align="right"
+                        >
+                          Positions
+                        </SortHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {deptPage.pageItems.map((d) => (
+                        <TableRow
+                          key={d.code}
+                          onClick={() => setSelectedDept(d.name)}
+                          className={cn(
+                            "cursor-pointer",
+                            selectedDept === d.name && "bg-primary/5",
+                          )}
+                        >
+                          <TableCell>
+                            <p className="font-medium">{d.name}</p>
+                            <p className="text-xs text-muted-foreground">{d.description}</p>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{d.head}</TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant="secondary">{d.staff}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right text-sm text-muted-foreground">
+                            {positions.filter((p) => p.department === d.name).length}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditDept(d);
+                              }}
+                              className="text-xs font-medium text-primary hover:underline"
+                            >
+                              Edit
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {deptSort.sorted.length === 0 && (
+                        <TableRow>
+                          <TableCell
+                            colSpan={5}
+                            className="py-6 text-center text-sm text-muted-foreground"
+                          >
+                            No departments match your search.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
                 </div>
+                <TablePagination
+                  page={deptPage.page}
+                  pageCount={deptPage.pageCount}
+                  from={deptPage.from}
+                  to={deptPage.to}
+                  total={deptPage.total}
+                  label="departments"
+                  onPageChange={deptPage.setPage}
+                />
               </CardContent>
             </Card>
 
@@ -349,164 +469,375 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
                   {role !== "superadmin" && " Deletion is restricted to Super Admin."}
                 </p>
 
-                <div className="mt-3 space-y-2">
-                  {visiblePositions.map((p) => {
-                    const vacant = p.headcount - p.filled;
-                    const requested = requisitions.some((r) => r.position === p.title);
-                    const members = membersOf(p.title);
-                    const isOpen = openPositionId === p.id;
-                    return (
-                      <Collapsible
-                        key={p.id}
-                        open={isOpen}
-                        onOpenChange={(o) => setOpenPositionId(o ? p.id : null)}
-                      >
-                        <div className="rounded-md border border-border/70">
-                          <div className="flex w-full items-center justify-between gap-3 px-3 py-2.5">
-                            <CollapsibleTrigger asChild>
-                              <button
-                                type="button"
-                                className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
-                              >
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <p className="truncate text-sm font-medium">{p.title}</p>
-                                    <Badge variant="outline" className="text-[0.65rem]">
-                                      {p.level}
-                                    </Badge>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground">
-                                    {p.department} · {p.salaryBand}
-                                  </p>
-                                </div>
-                                <div className="flex shrink-0 items-center gap-3">
-                                  <div className="w-28">
-                                    <Progress
-                                      value={(p.filled / p.headcount) * 100}
-                                      className="h-2"
-                                    />
-                                    <p className="mt-1 text-[0.65rem] text-muted-foreground">
-                                      {p.filled} of {p.headcount}
-                                    </p>
-                                  </div>
-                                  <Badge
-                                    variant="outline"
-                                    className={
-                                      vacant > 0
-                                        ? "border-caution/30 bg-caution/15 text-caution"
-                                        : "border-success/30 bg-success/15 text-success"
-                                    }
-                                  >
-                                    {vacant > 0 ? `${vacant} to fill` : "Fully staffed"}
-                                  </Badge>
+                <div className="mt-3 overflow-x-auto rounded-md border border-border/70">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <SortHead sortKey="title" sort={posSort.sort} onSort={posSort.toggle}>
+                          Position
+                        </SortHead>
+                        <SortHead sortKey="department" sort={posSort.sort} onSort={posSort.toggle}>
+                          Department
+                        </SortHead>
+                        <SortHead sortKey="level" sort={posSort.sort} onSort={posSort.toggle}>
+                          Level
+                        </SortHead>
+                        <SortHead
+                          sortKey="headcount"
+                          sort={posSort.sort}
+                          onSort={posSort.toggle}
+                          align="right"
+                        >
+                          Headcount
+                        </SortHead>
+                        <SortHead
+                          sortKey="vacant"
+                          sort={posSort.sort}
+                          onSort={posSort.toggle}
+                          align="right"
+                        >
+                          Status
+                        </SortHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {posPage.pageItems.map((p) => {
+                        const vacant = p.headcount - p.filled;
+                        const requested = requisitions.some((r) => r.position === p.title);
+                        const members = membersOf(p.title);
+                        const isOpen = openPositionId === p.id;
+                        return (
+                          <>
+                            <TableRow
+                              key={p.id}
+                              className="cursor-pointer"
+                              onClick={() => setOpenPositionId(isOpen ? null : p.id)}
+                            >
+                              <TableCell>
+                                <div className="flex items-center gap-2">
                                   <ChevronDown
                                     className={cn(
-                                      "h-4 w-4 text-muted-foreground transition-transform",
+                                      "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
                                       isOpen && "rotate-180",
                                     )}
                                   />
+                                  <span className="truncate text-sm font-medium">{p.title}</span>
                                 </div>
-                              </button>
-                            </CollapsibleTrigger>
-                            <div className="flex shrink-0 items-center gap-1.5">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={vacant === 0 || requested}
-                                onClick={() => {
-                                  setRequestFor(p);
-                                  setReqForm({
-                                    count: vacant,
-                                    urgency: "Normal",
-                                    justification: "",
-                                  });
-                                }}
-                              >
-                                <Send className="mr-1.5 h-3.5 w-3.5" />
-                                {requested ? "Requested" : "Request vacancy"}
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                title={
-                                  role === "superadmin" ? "Delete position" : "Super Admin only"
-                                }
-                                onClick={() => deletePosition(p.id)}
-                              >
-                                <Trash2
+                                <p className="ml-5 text-xs text-muted-foreground">{p.salaryBand}</p>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {p.department}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-[0.65rem]">
+                                  {p.level}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="ml-auto w-28">
+                                  <Progress
+                                    value={(p.filled / p.headcount) * 100}
+                                    className="h-2"
+                                  />
+                                  <p className="mt-1 text-[0.65rem] text-muted-foreground">
+                                    {p.filled} of {p.headcount}
+                                  </p>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Badge
+                                  variant="outline"
                                   className={
-                                    role === "superadmin"
-                                      ? "h-4 w-4 text-destructive"
-                                      : "h-4 w-4 text-muted-foreground"
+                                    vacant > 0
+                                      ? "border-caution/30 bg-caution/15 text-caution"
+                                      : "border-success/30 bg-success/15 text-success"
                                   }
-                                />
-                              </Button>
-                            </div>
-                          </div>
-                          <CollapsibleContent className="border-t border-border/70 px-3 py-3">
-                            <p className="eyebrow">Members ({members.length})</p>
-
-                            {members.length > 0 ? (
-                              <ul className="mt-2 space-y-1.5">
-                                {members.map((e) => (
-                                  <li
-                                    key={e.id}
-                                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-border/60 px-2.5 py-1.5 text-xs sm:flex sm:flex-wrap"
+                                >
+                                  {vacant > 0 ? `${vacant} to fill` : "Fully staffed"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell
+                                className="text-right"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="flex shrink-0 items-center justify-end gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={vacant === 0 || requested}
+                                    onClick={() => {
+                                      setRequestFor(p);
+                                      setReqForm({
+                                        count: vacant,
+                                        urgency: "Normal",
+                                        justification: "",
+                                      });
+                                    }}
                                   >
-                                    <div className="flex min-w-0 items-center gap-2 sm:w-52">
-                                      <Avatar className="h-6 w-6 shrink-0">
-                                        <AvatarFallback className="bg-primary/10 text-[0.6rem] text-primary">
-                                          {initialsOf(e.name)}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      <span className="truncate font-medium">{e.name}</span>
-                                    </div>
-                                    <span className="text-muted-foreground sm:w-24">{e.id}</span>
-                                    <span className="truncate text-muted-foreground sm:w-32">
-                                      {e.department}
-                                    </span>
-                                    <span className="truncate text-muted-foreground sm:w-40">
-                                      {e.position}
-                                    </span>
-                                    <Badge variant="outline" className="shrink-0 text-[0.6rem]">
-                                      {e.employmentType} {e.status}
-                                    </Badge>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-7 shrink-0 px-2 text-[0.7rem] sm:ml-auto"
-                                      onClick={() => {
-                                        setTransferEmployee(e);
-                                        setTransfer({ department: "", date: "2026-08-16" });
-                                      }}
-                                    >
-                                      <ArrowLeftRight className="mr-1.5 h-3 w-3" /> Transfer
-                                    </Button>
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p className="mt-2 text-xs text-muted-foreground">
-                                No employees currently hold this position.
-                              </p>
+                                    <Send className="mr-1.5 h-3.5 w-3.5" />
+                                    {requested ? "Requested" : "Request vacancy"}
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    title={
+                                      role === "superadmin" ? "Delete position" : "Super Admin only"
+                                    }
+                                    onClick={() => deletePosition(p.id)}
+                                  >
+                                    <Trash2
+                                      className={
+                                        role === "superadmin"
+                                          ? "h-4 w-4 text-destructive"
+                                          : "h-4 w-4 text-muted-foreground"
+                                      }
+                                    />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                            {isOpen && (
+                              <TableRow key={`${p.id}-members`}>
+                                <TableCell colSpan={6} className="bg-muted/30 px-4 py-3">
+                                  <p className="eyebrow">Members ({members.length})</p>
+                                  {members.length > 0 ? (
+                                    <ul className="mt-2 space-y-1.5">
+                                      {members.map((e) => (
+                                        <li
+                                          key={e.id}
+                                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-border/60 bg-card px-2.5 py-1.5 text-xs sm:flex sm:flex-wrap"
+                                        >
+                                          <div className="flex min-w-0 items-center gap-2 sm:w-52">
+                                            <Avatar className="h-6 w-6 shrink-0">
+                                              <AvatarFallback className="bg-primary/10 text-[0.6rem] text-primary">
+                                                {initialsOf(e.name)}
+                                              </AvatarFallback>
+                                            </Avatar>
+                                            <span className="truncate font-medium">{e.name}</span>
+                                          </div>
+                                          <span className="text-muted-foreground sm:w-24">
+                                            {e.id}
+                                          </span>
+                                          <span className="truncate text-muted-foreground sm:w-32">
+                                            {e.department}
+                                          </span>
+                                          <span className="truncate text-muted-foreground sm:w-40">
+                                            {e.position}
+                                          </span>
+                                          <Badge
+                                            variant="outline"
+                                            className="shrink-0 text-[0.6rem]"
+                                          >
+                                            {e.employmentType} {e.status}
+                                          </Badge>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-7 shrink-0 px-2 text-[0.7rem] sm:ml-auto"
+                                            onClick={() => {
+                                              setTransferEmployee(e);
+                                              setTransfer({ department: "", date: "2026-08-16" });
+                                            }}
+                                          >
+                                            <ArrowLeftRight className="mr-1.5 h-3 w-3" /> Transfer
+                                          </Button>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                      No employees currently hold this position.
+                                    </p>
+                                  )}
+                                </TableCell>
+                              </TableRow>
                             )}
-                          </CollapsibleContent>
-                        </div>
-                      </Collapsible>
-                    );
-                  })}
-                  {visiblePositions.length === 0 && (
-                    <p className="py-6 text-center text-sm text-muted-foreground">
-                      No positions match your filters.
-                    </p>
-                  )}
+                          </>
+                        );
+                      })}
+                      {posSort.sorted.length === 0 && (
+                        <TableRow>
+                          <TableCell
+                            colSpan={6}
+                            className="py-6 text-center text-sm text-muted-foreground"
+                          >
+                            No positions match your filters.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
                 </div>
+                <TablePagination
+                  page={posPage.page}
+                  pageCount={posPage.pageCount}
+                  from={posPage.from}
+                  to={posPage.to}
+                  total={posPage.total}
+                  label="positions"
+                  onPageChange={posPage.setPage}
+                />
               </CardContent>
             </Card>
           </div>
         </TabsContent>
-      </Tabs>
 
+        {/* REQUISITIONS */}
+        <TabsContent value="requisitions" className="mt-4 space-y-4">
+          <Card className="border-border/70">
+            <CardContent className="p-5">
+              <h2 className="font-display text-xl font-semibold">Requisitions</h2>
+              <p className="text-xs text-muted-foreground">
+                All open and historical vacancy requisitions submitted for approval.
+              </p>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Select
+                  value={reqDeptFilter}
+                  onValueChange={(v) => {
+                    setReqDeptFilter(v);
+                    setReqPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-52">
+                    <SelectValue placeholder="All departments" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All departments</SelectItem>
+                    {reqDeptOptions.map((d) => (
+                      <SelectItem key={d} value={d}>
+                        {d}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={reqDateFilter}
+                  onValueChange={(v) => {
+                    setReqDateFilter(v);
+                    setReqPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="All time" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All time</SelectItem>
+                    <SelectItem value="7">Last 7 days</SelectItem>
+                    <SelectItem value="30">Last 30 days</SelectItem>
+                    <SelectItem value="90">Last 90 days</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="relative ml-auto w-full max-w-sm">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={reqQuery}
+                    onChange={(e) => {
+                      setReqQuery(e.target.value);
+                      setReqPage(1);
+                    }}
+                    placeholder="Search requisition, position, department…"
+                    className="pl-8"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 overflow-x-auto rounded-md border border-border/70">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <SortHead sortKey="id" sort={reqSort.sort} onSort={reqSort.toggle}>
+                        ID
+                      </SortHead>
+                      <SortHead sortKey="position" sort={reqSort.sort} onSort={reqSort.toggle}>
+                        Position
+                      </SortHead>
+                      <SortHead sortKey="department" sort={reqSort.sort} onSort={reqSort.toggle}>
+                        Department
+                      </SortHead>
+                      <SortHead
+                        sortKey="count"
+                        sort={reqSort.sort}
+                        onSort={reqSort.toggle}
+                        align="right"
+                      >
+                        Openings
+                      </SortHead>
+                      <SortHead sortKey="urgency" sort={reqSort.sort} onSort={reqSort.toggle}>
+                        Urgency
+                      </SortHead>
+                      <SortHead sortKey="status" sort={reqSort.sort} onSort={reqSort.toggle}>
+                        Status
+                      </SortHead>
+                      <SortHead sortKey="requestedAt" sort={reqSort.sort} onSort={reqSort.toggle}>
+                        Requested
+                      </SortHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reqPageRows.map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="font-medium">{r.id}</TableCell>
+                        <TableCell>{r.position}</TableCell>
+                        <TableCell className="text-muted-foreground">{r.department}</TableCell>
+                        <TableCell className="text-right">{r.count}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={
+                              r.urgency === "Urgent" || r.urgency === "High"
+                                ? "border-caution/30 bg-caution/15 text-caution"
+                                : "border-border text-muted-foreground"
+                            }
+                          >
+                            {r.urgency}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={
+                              r.status === "Approved"
+                                ? "border-success/30 bg-success/15 text-success"
+                                : r.status === "Converted"
+                                  ? "border-primary/30 bg-primary/10 text-primary"
+                                  : "border-border text-muted-foreground"
+                            }
+                          >
+                            {r.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{r.requestedAt}</TableCell>
+                      </TableRow>
+                    ))}
+                    {reqPageRows.length === 0 && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={7}
+                          className="py-6 text-center text-sm text-muted-foreground"
+                        >
+                          No requisitions match your filters.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <TablePagination
+                page={reqCurrentPage}
+                pageCount={reqTotalPages}
+                from={reqSort.sorted.length === 0 ? 0 : (reqCurrentPage - 1) * REQ_PAGE_SIZE + 1}
+                to={Math.min(reqCurrentPage * REQ_PAGE_SIZE, reqSort.sorted.length)}
+                total={reqSort.sorted.length}
+                label="requisitions"
+                onPageChange={setReqPage}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* CREATE DEPARTMENT */}
       <Dialog open={createDeptOpen} onOpenChange={setCreateDeptOpen}>
@@ -722,7 +1053,6 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
           )}
         </DialogContent>
       </Dialog>
-
 
       {/* TRANSFER EMPLOYEE */}
       <Dialog open={!!transferEmployee} onOpenChange={(o) => !o && setTransferEmployee(null)}>

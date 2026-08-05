@@ -321,11 +321,13 @@ export const screeningCriteria = [
   { name: "Certifications", weight: 10, enabled: true },
 ];
 
+export const TODAY_ISO = "2026-08-03";
+
 export const interviewers = [
-  { id: "S1", name: "Ana Ramos", role: "Front Office Manager" },
-  { id: "S2", name: "Chef Gabriel Mendoza", role: "F&B Director" },
-  { id: "S3", name: "Lourdes Bautista", role: "Executive Housekeeper" },
-  { id: "S4", name: "Juan Dela Cruz", role: "HR Officer" },
+  { id: "S1", name: "Ana Ramos", role: "Front Office Manager", department: "Front Office" },
+  { id: "S2", name: "Chef Gabriel Mendoza", role: "F&B Director", department: "Food & Beverage" },
+  { id: "S3", name: "Lourdes Bautista", role: "Executive Housekeeper", department: "Housekeeping" },
+  { id: "S4", name: "Juan Dela Cruz", role: "HR Officer", department: "Administration / HR" },
 ];
 
 export type Interview = {
@@ -398,4 +400,62 @@ export const assessmentCriteria = [
   "Technical / Practical Skill",
   "Grooming & Professionalism",
   "Availability & Flexibility",
+];
+
+
+export type AuditActionType =
+  | "Interview Booked"
+  | "Interview Scheduled"
+  | "Interview Completed"
+  | "Interview Cancelled"
+  | "Interview No-Show"
+  | "Applicant Accepted"
+  | "Applicant Rejected"
+  | "Applicant Transferred"
+  | "Assessment Started"
+  | "Assessment Completed"
+  | "Assessment Accepted"
+  | "Assessment Rejected"
+  | "Status Change"
+  | "Applicant Added";
+
+export type AuditEntry = {
+  id: string;
+  date: string;
+  time: string;
+  actorName: string;
+  actorPosition: string;
+  actorDepartment: string;
+  actionType: AuditActionType;
+  target: string;
+  module: string;
+  details: string;
+};
+
+export const applicantAuditLog: AuditEntry[] = [
+  { id: "AUD-001", date: "2026-07-20", time: "09:12 AM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Applicant Added", target: "Camille Ortega", module: "Screening", details: "Added via document screening — camille_resume.pdf, scored 93%." },
+  { id: "AUD-002", date: "2026-07-21", time: "10:40 AM", actorName: "Ana Ramos", actorPosition: "Front Office Manager", actorDepartment: "Front Office", actionType: "Interview Booked", target: "Camille Ortega", module: "Interview Scheduling", details: "On-site interview booked for 2026-07-22, 09:00 AM." },
+  { id: "AUD-003", date: "2026-07-22", time: "09:05 AM", actorName: "Ana Ramos", actorPosition: "Front Office Manager", actorDepartment: "Front Office", actionType: "Interview Completed", target: "Camille Ortega", module: "Interview Scheduling", details: "Interview marked complete, strong guest-facing presence noted." },
+  { id: "AUD-004", date: "2026-07-23", time: "02:15 PM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Assessment Started", target: "Camille Ortega", module: "Assessment", details: "Practical front desk simulation started." },
+  { id: "AUD-005", date: "2026-07-23", time: "03:40 PM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Assessment Accepted", target: "Camille Ortega", module: "Assessment", details: "Assessment score 94% — advanced to job offer." },
+  { id: "AUD-006", date: "2026-07-24", time: "11:00 AM", actorName: "Chef Gabriel Mendoza", actorPosition: "F&B Director", actorDepartment: "Food & Beverage", actionType: "Interview Booked", target: "Jompaks Berdugo", module: "Interview Scheduling", details: "On-site interview booked for 2026-07-29, 04:00 PM." },
+  { id: "AUD-007", date: "2026-07-24", time: "01:20 PM", actorName: "Chef Gabriel Mendoza", actorPosition: "F&B Director", actorDepartment: "Food & Beverage", actionType: "Interview Booked", target: "Kevin Dela Cruz", module: "Interview Scheduling", details: "On-site interview booked for 2026-07-30, 10:00 AM." },
+  { id: "AUD-008", date: "2026-07-24", time: "05:05 PM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Status Change", target: "Mark Reyes", module: "Screening", details: "Stage moved to Screened after resume re-check." },
+  { id: "AUD-009", date: "2026-07-24", time: "05:30 PM", actorName: "Lourdes Bautista", actorPosition: "Executive Housekeeper", actorDepartment: "Housekeeping", actionType: "Applicant Transferred", target: "Mark Reyes", module: "Screening", details: "Flagged as stronger match for Facilities Maintenance." },
+  { id: "AUD-010", date: "2026-07-25", time: "08:50 AM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Applicant Rejected", target: "Elena Torres", module: "Screening", details: "No culinary certification or kitchen experience detected." },
+  { id: "AUD-011", date: "2026-07-25", time: "09:35 AM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Applicant Added", target: "Princess Mabangis", module: "Screening", details: "Added via image (OCR) screening — walk-in resume scan." },
+  { id: "AUD-012", date: "2026-07-25", time: "10:15 AM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Applicant Added", target: "Kanor Ornak", module: "Screening", details: "Added via document screening from Indeed source." },
+  { id: "AUD-013", date: "2026-07-25", time: "11:02 AM", actorName: "Ana Ramos", actorPosition: "Front Office Manager", actorDepartment: "Front Office", actionType: "Applicant Transferred", target: "Kanor Ornak", module: "Screening", details: "Suggested stronger match: Restaurant Server (86%)." },
+  { id: "AUD-014", date: "2026-07-25", time: "01:48 PM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Applicant Added", target: "Marjun Devera", module: "Screening", details: "Added via document screening — referral source." },
+  { id: "AUD-015", date: "2026-07-25", time: "04:30 PM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Applicant Added", target: "Bianca Soriano", module: "Screening", details: "Added via document screening — online portal, scored 96%." },
+  { id: "AUD-016", date: "2026-07-26", time: "09:00 AM", actorName: "Ana Ramos", actorPosition: "Front Office Manager", actorDepartment: "Front Office", actionType: "Interview Booked", target: "Bianca Soriano", module: "Interview Scheduling", details: "On-site interview booked for 2026-07-28, 09:00 AM." },
+  { id: "AUD-017", date: "2026-07-26", time: "09:20 AM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Interview Booked", target: "Juan De La Cruz", module: "Interview Scheduling", details: "Virtual interview booked for 2026-07-28, 01:30 PM." },
+  { id: "AUD-018", date: "2026-07-26", time: "10:10 AM", actorName: "Chef Gabriel Mendoza", actorPosition: "F&B Director", actorDepartment: "Food & Beverage", actionType: "Interview Completed", target: "Kevin Dela Cruz", module: "Interview Scheduling", details: "Cook test completed, solid knife skills and station timing." },
+  { id: "AUD-019", date: "2026-07-26", time: "10:45 AM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Assessment Started", target: "Kevin Dela Cruz", module: "Assessment", details: "Practical cook test assessment started." },
+  { id: "AUD-020", date: "2026-07-26", time: "11:30 AM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Assessment Accepted", target: "Kevin Dela Cruz", module: "Assessment", details: "Assessment score 82% — advanced to job offer." },
+  { id: "AUD-021", date: "2026-07-27", time: "02:00 PM", actorName: "Chef Gabriel Mendoza", actorPosition: "F&B Director", actorDepartment: "Food & Beverage", actionType: "Assessment Started", target: "Jompaks Berdugo", module: "Assessment", details: "Mixology practical assessment started." },
+  { id: "AUD-022", date: "2026-07-27", time: "03:10 PM", actorName: "Chef Gabriel Mendoza", actorPosition: "F&B Director", actorDepartment: "Food & Beverage", actionType: "Assessment Accepted", target: "Jompaks Berdugo", module: "Assessment", details: "Assessment score 88% — advanced to job offer." },
+  { id: "AUD-023", date: "2026-07-28", time: "09:05 AM", actorName: "Ana Ramos", actorPosition: "Front Office Manager", actorDepartment: "Front Office", actionType: "Interview Completed", target: "Bianca Soriano", module: "Interview Scheduling", details: "Front office simulation completed successfully." },
+  { id: "AUD-024", date: "2026-07-28", time: "01:45 PM", actorName: "Juan Dela Cruz", actorPosition: "HR Officer", actorDepartment: "Administration / HR", actionType: "Interview No-Show", target: "Juan De La Cruz", module: "Interview Scheduling", details: "Candidate did not join the virtual meeting room." },
+  { id: "AUD-025", date: "2026-07-29", time: "04:30 PM", actorName: "Chef Gabriel Mendoza", actorPosition: "F&B Director", actorDepartment: "Food & Beverage", actionType: "Interview Cancelled", target: "Jompaks Berdugo", module: "Interview Scheduling", details: "Follow-up panel interview cancelled — role already filled." },
 ];

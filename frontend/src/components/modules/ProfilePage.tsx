@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Camera, KeyRound, PencilLine, ShieldCheck, User } from "lucide-react";
+import { Camera, KeyRound, PencilLine, User } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/portal/PageHeader";
@@ -185,8 +185,12 @@ export function ProfilePage({ role }: { role: Role }) {
                 <span className="grid h-9 w-9 place-items-center rounded-md bg-primary/10 text-primary">
                   <User className="h-4 w-4" />
                 </span>
-                <h3 className="font-display text-xl font-semibold">Personal Information</h3>
+                <h3 className="font-display text-xl font-semibold">Profile Information</h3>
               </div>
+
+              <p className="mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Personal Details
+              </p>
 
               <div className="mt-6 grid gap-5 sm:grid-cols-2">
                 <div className="space-y-2">
@@ -259,19 +263,12 @@ export function ProfilePage({ role }: { role: Role }) {
                   />
                 </div>
               </div>
-            </CardContent>
-          </Card>
 
-          <Card className="border-border/70">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <span className="grid h-9 w-9 place-items-center rounded-md bg-primary/10 text-primary">
-                  <ShieldCheck className="h-4 w-4" />
-                </span>
-                <h3 className="font-display text-xl font-semibold">Account Information</h3>
-              </div>
+              <p className="mt-8 border-t border-border/60 pt-6 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Account Details
+              </p>
 
-              <div className="mt-6 grid gap-5 sm:grid-cols-2">
+              <div className="mt-4 grid gap-5 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="p-id">Employee ID</Label>
                   <Input id="p-id" value={value.employeeId} disabled />
@@ -287,7 +284,10 @@ export function ProfilePage({ role }: { role: Role }) {
                 <div className="space-y-2">
                   <Label>Status</Label>
                   <div>
-                    <Badge className="bg-success/15 text-success border-success/30" variant="outline">
+                    <Badge
+                      className="bg-success/15 text-success border-success/30"
+                      variant="outline"
+                    >
                       {value.status}
                     </Badge>
                   </div>

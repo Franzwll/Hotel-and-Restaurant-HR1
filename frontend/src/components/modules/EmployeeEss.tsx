@@ -2,6 +2,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/portal/PageHeader";
+import { TablePagination } from "@/components/ui/table-pagination";
+import { usePagination } from "@/hooks/usePagination";
 import { StatCard } from "@/components/portal/StatCard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +54,10 @@ export function EmployeeEss() {
   const [category, setCategory] = useState(requestCategories[0]!.name);
   const mine = essRequests.filter((r) => r.employeeId === myProfile.employeeId);
   const types = requestCategories.find((c) => c.name === category)?.types ?? [];
+
+  const attendancePage = usePagination(myAttendance.history);
+  const payslipPage = usePagination(myPayroll.payslips);
+  const minePage = usePagination(mine);
 
   return (
     <div>
@@ -120,7 +126,7 @@ export function EmployeeEss() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {myAttendance.history.map((h) => (
+                    {attendancePage.pageItems.map((h) => (
                       <TableRow key={h.date}>
                         <TableCell className="text-xs">{h.date}</TableCell>
                         <TableCell className="text-xs">{h.in}</TableCell>
@@ -131,6 +137,15 @@ export function EmployeeEss() {
                     ))}
                   </TableBody>
                 </Table>
+                <TablePagination
+                  page={attendancePage.page}
+                  pageCount={attendancePage.pageCount}
+                  from={attendancePage.from}
+                  to={attendancePage.to}
+                  total={attendancePage.total}
+                  label="records"
+                  onPageChange={attendancePage.setPage}
+                />
               </CardContent>
             </Card>
           </div>
@@ -194,14 +209,20 @@ export function EmployeeEss() {
                 </div>
                 <p className="eyebrow mt-4">Earnings</p>
                 {myPayroll.breakdown.map((b) => (
-                  <div key={b.label} className="flex justify-between border-b border-border py-1.5 text-sm">
+                  <div
+                    key={b.label}
+                    className="flex justify-between border-b border-border py-1.5 text-sm"
+                  >
                     <span>{b.label}</span>
                     <span>{peso(b.amount)}</span>
                   </div>
                 ))}
                 <p className="eyebrow mt-4">Deductions</p>
                 {myPayroll.deductions.map((b) => (
-                  <div key={b.label} className="flex justify-between border-b border-border py-1.5 text-sm">
+                  <div
+                    key={b.label}
+                    className="flex justify-between border-b border-border py-1.5 text-sm"
+                  >
                     <span>{b.label}</span>
                     <span className="text-destructive">-{peso(b.amount)}</span>
                   </div>
@@ -221,7 +242,7 @@ export function EmployeeEss() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {myPayroll.payslips.map((p) => (
+                    {payslipPage.pageItems.map((p) => (
                       <TableRow key={p.period}>
                         <TableCell className="text-xs">{p.period}</TableCell>
                         <TableCell className="text-sm">{peso(p.net)}</TableCell>
@@ -229,7 +250,11 @@ export function EmployeeEss() {
                           <Badge variant="outline">{p.status}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button size="sm" variant="outline" onClick={() => toast("Payslip downloaded")}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => toast("Payslip downloaded")}
+                          >
                             Download
                           </Button>
                         </TableCell>
@@ -237,6 +262,15 @@ export function EmployeeEss() {
                     ))}
                   </TableBody>
                 </Table>
+                <TablePagination
+                  page={payslipPage.page}
+                  pageCount={payslipPage.pageCount}
+                  from={payslipPage.from}
+                  to={payslipPage.to}
+                  total={payslipPage.total}
+                  label="payslips"
+                  onPageChange={payslipPage.setPage}
+                />
               </CardContent>
             </Card>
           </div>
@@ -245,7 +279,9 @@ export function EmployeeEss() {
         <TabsContent value="benefits" className="mt-4">
           <Card className="border-border/70">
             <CardContent className="p-6">
-              <h2 className="font-display text-2xl font-semibold">Government &amp; Company Benefits</h2>
+              <h2 className="font-display text-2xl font-semibold">
+                Government &amp; Company Benefits
+              </h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {myBenefits.map((b) => (
                   <div key={b.name} className="rounded-md border border-border p-4">
@@ -257,7 +293,9 @@ export function EmployeeEss() {
               </div>
               <div className="mt-4 rounded-md border border-border p-4">
                 <p className="eyebrow">Company loan</p>
-                <p className="mt-1 text-sm">Outstanding balance ₱5,400 · ₱450 / cut-off · 12 of 24 paid</p>
+                <p className="mt-1 text-sm">
+                  Outstanding balance ₱5,400 · ₱450 / cut-off · 12 of 24 paid
+                </p>
                 <Progress value={50} className="mt-2 h-2" />
               </div>
             </CardContent>
@@ -316,7 +354,9 @@ export function EmployeeEss() {
                 <Label>Supporting document</Label>
                 <Input type="file" />
               </div>
-              <Button onClick={() => toast.success("Request submitted to HR")}>Submit request</Button>
+              <Button onClick={() => toast.success("Request submitted to HR")}>
+                Submit request
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -336,7 +376,7 @@ export function EmployeeEss() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mine.map((r) => (
+                  {minePage.pageItems.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="text-xs font-medium">{r.id}</TableCell>
                       <TableCell className="text-sm">{r.type}</TableCell>
@@ -349,6 +389,15 @@ export function EmployeeEss() {
                   ))}
                 </TableBody>
               </Table>
+                <TablePagination
+                  page={minePage.page}
+                  pageCount={minePage.pageCount}
+                  from={minePage.from}
+                  to={minePage.to}
+                  total={minePage.total}
+                  label="requests"
+                  onPageChange={minePage.setPage}
+                />
             </CardContent>
           </Card>
         </TabsContent>
@@ -360,7 +409,11 @@ export function EmployeeEss() {
 export function EmployeeProfile() {
   return (
     <div>
-      <PageHeader eyebrow="Employee" title="My Profile" description="Your employment record on file." />
+      <PageHeader
+        eyebrow="Employee"
+        title="My Profile"
+        description="Your employment record on file."
+      />
       <Card className="border-border/70">
         <CardContent className="p-6">
           <div className="flex flex-wrap items-center gap-5">
@@ -398,13 +451,18 @@ export function EmployeeProfile() {
                         <SelectValue placeholder="Select field" />
                       </SelectTrigger>
                       <SelectContent>
-                        {["Address", "Contact Number", "Email", "Civil Status", "Emergency Contact", "Government ID"].map(
-                          (f) => (
-                            <SelectItem key={f} value={f}>
-                              {f}
-                            </SelectItem>
-                          ),
-                        )}
+                        {[
+                          "Address",
+                          "Contact Number",
+                          "Email",
+                          "Civil Status",
+                          "Emergency Contact",
+                          "Government ID",
+                        ].map((f) => (
+                          <SelectItem key={f} value={f}>
+                            {f}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

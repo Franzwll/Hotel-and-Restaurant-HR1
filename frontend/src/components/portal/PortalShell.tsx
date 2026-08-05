@@ -156,7 +156,7 @@ export function PortalShell({ role, children }: { role: Role; children: ReactNod
 
         <div className="space-y-1 border-t border-sidebar-border p-2">
           <Link
-            to={`${meta.base}/profile`}
+            to={`${meta.base}/profile` as "/admin/profile"}
             className={cn(
               "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors",
               pathname === `${meta.base}/profile`
@@ -380,12 +380,12 @@ export function PortalShell({ role, children }: { role: Role; children: ReactNod
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link to={`${meta.base}/profile`}>
+                  <Link to={`${meta.base}/profile` as "/admin/profile"}>
                     <UserCircle className="mr-2 h-4 w-4" /> View Profile
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link to={`${meta.base}/settings`}>
+                  <Link to={`${meta.base}/settings` as "/admin/settings"}>
                     <SettingsIcon className="mr-2 h-4 w-4" /> Settings
                   </Link>
                 </DropdownMenuItem>
