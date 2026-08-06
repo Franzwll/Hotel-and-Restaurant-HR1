@@ -16,6 +16,7 @@ import { Route as ContactRouteImport } from './routes/contact'
 import { Route as EmployeeRouteImport } from './routes/employee'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as OtpRouteImport } from './routes/otp'
 import { Route as SuperadminRouteImport } from './routes/superadmin'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminApplicantsRouteImport } from './routes/admin.applicants'
@@ -78,6 +79,11 @@ const FaqRoute = FaqRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OtpRoute = OtpRouteImport.update({
+  id: '/otp',
+  path: '/otp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SuperadminRoute = SuperadminRouteImport.update({
@@ -229,6 +235,7 @@ export interface FileRoutesByFullPath {
   '/employee': typeof EmployeeRouteWithChildren
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
+  '/otp': typeof OtpRoute
   '/superadmin': typeof SuperadminRouteWithChildren
   '/admin/applicants': typeof AdminApplicantsRoute
   '/admin/employees': typeof AdminEmployeesRoute
@@ -264,6 +271,7 @@ export interface FileRoutesByTo {
   '/contact': typeof ContactRoute
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
+  '/otp': typeof OtpRoute
   '/admin/applicants': typeof AdminApplicantsRoute
   '/admin/employees': typeof AdminEmployeesRoute
   '/admin/ess': typeof AdminEssRoute
@@ -301,6 +309,7 @@ export interface FileRoutesById {
   '/employee': typeof EmployeeRouteWithChildren
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
+  '/otp': typeof OtpRoute
   '/superadmin': typeof SuperadminRouteWithChildren
   '/admin/applicants': typeof AdminApplicantsRoute
   '/admin/employees': typeof AdminEmployeesRoute
@@ -340,6 +349,7 @@ export interface FileRouteTypes {
     | '/employee'
     | '/faq'
     | '/login'
+    | '/otp'
     | '/superadmin'
     | '/admin/applicants'
     | '/admin/employees'
@@ -375,6 +385,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/faq'
     | '/login'
+    | '/otp'
     | '/admin/applicants'
     | '/admin/employees'
     | '/admin/ess'
@@ -411,6 +422,7 @@ export interface FileRouteTypes {
     | '/employee'
     | '/faq'
     | '/login'
+    | '/otp'
     | '/superadmin'
     | '/admin/applicants'
     | '/admin/employees'
@@ -449,6 +461,7 @@ export interface RootRouteChildren {
   EmployeeRoute: typeof EmployeeRouteWithChildren
   FaqRoute: typeof FaqRoute
   LoginRoute: typeof LoginRoute
+  OtpRoute: typeof OtpRoute
   SuperadminRoute: typeof SuperadminRouteWithChildren
   JobsJobIdRoute: typeof JobsJobIdRoute
   JobsIndexRoute: typeof JobsIndexRoute
@@ -503,6 +516,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/otp': {
+      id: '/otp'
+      path: '/otp'
+      fullPath: '/otp'
+      preLoaderRoute: typeof OtpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/superadmin': {
@@ -790,6 +810,7 @@ const rootRouteChildren: RootRouteChildren = {
   EmployeeRoute: EmployeeRouteWithChildren,
   FaqRoute: FaqRoute,
   LoginRoute: LoginRoute,
+  OtpRoute: OtpRoute,
   SuperadminRoute: SuperadminRouteWithChildren,
   JobsJobIdRoute: JobsJobIdRoute,
   JobsIndexRoute: JobsIndexRoute,
