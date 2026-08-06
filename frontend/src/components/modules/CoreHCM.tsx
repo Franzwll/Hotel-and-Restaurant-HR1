@@ -59,6 +59,7 @@ import {
   type Department,
   type OrgNode,
   type Position,
+  type Employee,
 } from "@/data/hr";
 import { cn } from "@/lib/utils";
 import { requisitionStore, useRequisitions } from "@/data/requisitions";
@@ -71,6 +72,144 @@ const initialsOf = (name: string) =>
     .slice(0, 2)
     .join("")
     .toUpperCase();
+
+/** Standalone Employee List tab component */
+function EmployeeListTab() {
+  const [empSearch, setEmpSearch] = useState("");
+  const [empDeptFilter, setEmpDeptFilter] = useState("all");
+  const [empStatusFilter, setEmpStatusFilter] = useState("all");
+
+  const filteredEmployees = employees.filter((e: Employee) => {
+    const q = empSearch.trim().toLowerCase();
+    const matchesSearch =
+      !q ||
+      e.name.toLowerCase().includes(q) ||
+      e.id.toLowerCase().includes(q) ||
+      e.position.toLowerCase().includes(q) ||
+      e.department.toLowerCase().includes(q);
+    const matchesDept = empDeptFilter === "all" || e.department === empDeptFilter;
+    const matchesStatus = empStatusFilter === "all" || e.status === empStatusFilter;
+    return matchesSearch && matchesDept && matchesStatus;
+  });
+
+  const empPage = usePagination(filteredEmployees);
+  const deptOptions = Array.from(new Set(employees.map((e: Employee) => e.department))).sort();
+
+  return (
+    <Card className="border-border/70">
+      <CardContent className="p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-display text-2xl font-semibold">Employee List</h2>
+            <p className="text-xs text-muted-foreground">
+              {filteredEmployees.length} employee{filteredEmployees.length !== 1 ? "s" : ""} shown
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[14rem]">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-8"
+                placeholder="Search name, ID, position…"
+                value={empSearch}
+                onChange={(e) => setEmpSearch(e.target.value)}
+              />
+            </div>
+            <Select value={empDeptFilter} onValueChange={setEmpDeptFilter}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="All departments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All departments</SelectItem>
+                {deptOptions.map((d) => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={empStatusFilter} onValueChange={setEmpStatusFilter}>
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="Active">Active</SelectItem>
+                <SelectItem value="Inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Employee ID</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Department</TableHead>
+                <TableHead>Position</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Date Hired</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {empPage.pageItems.map((e: Employee) => (
+                <TableRow key={e.id}>
+                  <TableCell className="font-mono text-xs">{e.id}</TableCell>
+                  <TableCell className="font-medium">{e.name}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{e.department}</TableCell>
+                  <TableCell className="text-sm">{e.position}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={
+                        e.employmentType === "Regular"
+                          ? "border-success/40 text-success"
+                          : e.employmentType === "Probationary"
+                          ? "border-gold/40 text-gold"
+                          : "border-border"
+                      }
+                    >
+                      {e.employmentType}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{e.dateHired}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={
+                        e.status === "Active"
+                          ? "border-success/40 bg-success/10 text-success"
+                          : "border-border text-muted-foreground"
+                      }
+                    >
+                      {e.status}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredEmployees.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                    No employees match your filters.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <TablePagination
+          page={empPage.page}
+          pageCount={empPage.pageCount}
+          from={empPage.from}
+          to={empPage.to}
+          total={empPage.total}
+          label="employees"
+          onPageChange={empPage.setPage}
+        />
+      </CardContent>
+    </Card>
+  );
+}
 
 /** Top-down organizational chart with proper connector lines. */
 function OrgNodeCard({
@@ -292,6 +431,7 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
         <TabsList className="flex h-auto flex-wrap justify-start">
           <TabsTrigger value="org">Organizational Chart</TabsTrigger>
           <TabsTrigger value="dept-positions">Departments &amp; Positions</TabsTrigger>
+          <TabsTrigger value="employee-list">Employee List</TabsTrigger>
           <TabsTrigger value="requisitions">Requisitions</TabsTrigger>
         </TabsList>
 
@@ -310,6 +450,11 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* EMPLOYEE LIST */}
+        <TabsContent value="employee-list" className="mt-4">
+          <EmployeeListTab />
         </TabsContent>
 
         {/* DEPARTMENTS & POSITIONS */}

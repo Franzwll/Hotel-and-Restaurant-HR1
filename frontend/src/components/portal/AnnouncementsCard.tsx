@@ -1,5 +1,7 @@
-import { Megaphone, Trash2 } from "lucide-react";
+import { Megaphone, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
 
+import { AnnouncementDialog } from "@/components/portal/AnnouncementDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,6 +11,7 @@ import type { Role } from "@/lib/nav";
 export function AnnouncementsCard({ role }: { role: Role }) {
   const { announcements, removeAnnouncement } = usePortalState();
   const canManage = role === "superadmin";
+  const [publishOpen, setPublishOpen] = useState(false);
 
   const visible = announcements.filter((a) => isVisibleTo(a.audience, role));
 
@@ -28,6 +31,17 @@ export function AnnouncementsCard({ role }: { role: Role }) {
           <Badge variant="outline" className="ml-auto">
             {visible.length}
           </Badge>
+          {canManage && (
+            <Button
+              size="sm"
+              className="shrink-0"
+              onClick={() => setPublishOpen(true)}
+              id="publish-announcement-btn"
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              Publish
+            </Button>
+          )}
         </div>
 
         <div className="mt-4 space-y-3">
@@ -63,6 +77,14 @@ export function AnnouncementsCard({ role }: { role: Role }) {
           ))}
         </div>
       </CardContent>
+
+      {canManage && (
+        <AnnouncementDialog
+          open={publishOpen}
+          onOpenChange={setPublishOpen}
+          author="Bullseur Santiago"
+        />
+      )}
     </Card>
   );
 }

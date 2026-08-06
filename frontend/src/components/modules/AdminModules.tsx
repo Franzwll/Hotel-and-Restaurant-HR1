@@ -205,6 +205,10 @@ export function UserManagement() {
 
   const [matrix, setMatrix] =
     useState<Record<SystemUser["role"], Record<PermissionGroup, PermissionLevel>>>(roleGroupMatrix);
+  const [matrixDraft, setMatrixDraft] =
+    useState<Record<SystemUser["role"], Record<PermissionGroup, PermissionLevel>>>(roleGroupMatrix);
+  const [isEditingMatrix, setIsEditingMatrix] = useState(false);
+
   const [sessions, setSessions] = useState<ActiveSession[]>(activeSessionsSeed);
   const [twoFactor, setTwoFactor] = useState(true);
   const [passwordPolicy, setPasswordPolicy] = useState("strong");
@@ -616,25 +620,76 @@ export function UserManagement() {
                 <div>
                   <h2 className="font-display text-2xl font-semibold">Permission Matrix</h2>
                   <p className="text-xs text-muted-foreground">
-                    Role-based access across functional areas — pick a level per module to edit.
+                    Role-based access matrix — click Edit to modify checkbox permissions.
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setMatrix(roleGroupMatrix)}>
-                    Reset to defaults
-                  </Button>
-                  <Button size="sm" onClick={() => toast.success("Permission matrix saved")}>
-                    Save changes
-                  </Button>
+                <div className="flex flex-wrap gap-2">
+                  {!isEditingMatrix ? (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setMatrixDraft({ ...matrix });
+                          setIsEditingMatrix(true);
+                        }}
+                      >
+                        Edit matrix
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setMatrix(roleGroupMatrix);
+                          setMatrixDraft(roleGroupMatrix);
+                          toast.success("Permission matrix reset to default settings");
+                        }}
+                      >
+                        Reset to default
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setMatrix({ ...matrixDraft });
+                          setIsEditingMatrix(false);
+                          toast.success("Permission matrix saved successfully");
+                        }}
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setIsEditingMatrix(false);
+                          setMatrixDraft({ ...matrix });
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setMatrixDraft(roleGroupMatrix);
+                          toast.info("Draft permissions reset to defaults");
+                        }}
+                      >
+                        Reset to default
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="mt-4 overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Role</TableHead>
+                      <TableHead className="w-36">Role</TableHead>
                       {permissionGroups.map((g) => (
-                        <TableHead key={g} className="min-w-[11rem]">
+                        <TableHead key={g} className="min-w-[12rem]">
                           {g}
                         </TableHead>
                       ))}
@@ -643,44 +698,81 @@ export function UserManagement() {
                   <TableBody>
                     {(["Super Admin", "Admin", "Employee"] as const).map((role) => (
                       <TableRow key={role}>
-                        <TableCell className="text-sm font-medium">{roleLabels[role]}</TableCell>
-                        {permissionGroups.map((g) => (
-                          <TableCell key={g}>
-                            <Select
-                              value={matrix[role][g]}
-                              onValueChange={(v) =>
-                                setMatrix((prev) => ({
-                                  ...prev,
-                                  [role]: { ...prev[role], [g]: v as PermissionLevel },
-                                }))
-                              }
-                            >
-                              <SelectTrigger
-                                aria-label={`${roleLabels[role]} permission for ${g}`}
+                        <TableCell className="text-sm font-medium align-top pt-4">
+                          {roleLabels[role]}
+                        </TableCell>
+                        {permissionGroups.map((g) => {
+                          const active = isEditingMatrix ? matrixDraft : matrix;
+                          const level = active[role]?.[g] ?? "None";
+                          const isView =
+                            level === "View" ||
+                            level === "Edit" ||
+                            level === "Full" ||
+                            level === "Approve / Reject Only";
+                          const isEdit =
+                            level === "Edit" || level === "Full" || level === "Approve / Reject Only";
+                          const isFull = level === "Full";
+
+                          const handleToggle = (type: "View" | "Edit" | "Full", checked: boolean) => {
+                            let next: PermissionLevel = "None";
+                            if (type === "Full") {
+                              next = checked ? "Full" : "Edit";
+                            } else if (type === "Edit") {
+                              next = checked ? "Edit" : "View";
+                            } else if (type === "View") {
+                              next = checked ? "View" : "None";
+                            }
+                            setMatrixDraft((prev) => ({
+                              ...prev,
+                              [role]: { ...prev[role], [g]: next },
+                            }));
+                          };
+
+                          return (
+                            <TableCell key={g} className="align-top py-3">
+                              <div
                                 className={cn(
-                                  "h-8 w-[10.5rem] text-xs",
-                                  permissionLevelTone[matrix[role][g]],
+                                  "space-y-1.5 rounded-md border border-border bg-card p-2.5 transition-opacity",
+                                  !isEditingMatrix && "opacity-85 pointer-events-none bg-muted/30",
                                 )}
                               >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {permissionLevels.map((l) => (
-                                  <SelectItem key={l} value={l}>
-                                    {l}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                        ))}
+                                <label className="flex items-center gap-2 text-xs font-normal cursor-pointer select-none">
+                                  <Checkbox
+                                    checked={isView}
+                                    disabled={!isEditingMatrix}
+                                    onCheckedChange={(c) => handleToggle("View", !!c)}
+                                  />
+                                  <span>View Access</span>
+                                </label>
+                                <label className="flex items-center gap-2 text-xs font-normal cursor-pointer select-none">
+                                  <Checkbox
+                                    checked={isEdit}
+                                    disabled={!isEditingMatrix}
+                                    onCheckedChange={(c) => handleToggle("Edit", !!c)}
+                                  />
+                                  <span>Edit Access</span>
+                                </label>
+                                <label className="flex items-center gap-2 text-xs font-normal cursor-pointer select-none">
+                                  <Checkbox
+                                    checked={isFull}
+                                    disabled={!isEditingMatrix}
+                                    onCheckedChange={(c) => handleToggle("Full", !!c)}
+                                  />
+                                  <span>Full Control</span>
+                                </label>
+                              </div>
+                            </TableCell>
+                          );
+                        })}
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                Permission levels apply to every module within a functional area.
+                {isEditingMatrix
+                  ? "Checkboxes active — click Save when finished editing permissions."
+                  : "Click the 'Edit matrix' button above to unlock and modify role permission checkboxes."}
               </p>
             </CardContent>
           </Card>
@@ -998,7 +1090,7 @@ export function AuditLogs() {
     severity: (a) => a.severity,
   });
 
-  const auditPage = usePagination(rows);
+  const auditPage = usePagination(rows, 5);
 
   const totalEvents = auditLogs.length;
   const criticalCount = auditLogs.filter((a) => a.severity === "Critical").length;
@@ -1128,9 +1220,6 @@ export function AuditLogs() {
                   <SortHead sortKey="module" sort={sort} onSort={toggle}>
                     Module
                   </SortHead>
-                  <SortHead sortKey="department" sort={sort} onSort={toggle}>
-                    Department
-                  </SortHead>
                   <SortHead sortKey="device" sort={sort} onSort={toggle}>
                     Device
                   </SortHead>
@@ -1150,7 +1239,6 @@ export function AuditLogs() {
                     <TableCell className="text-xs">{a.role}</TableCell>
                     <TableCell className="text-sm">{a.action}</TableCell>
                     <TableCell className="text-xs">{a.module}</TableCell>
-                    <TableCell className="text-xs">{a.department}</TableCell>
                     <TableCell className="text-xs">{a.device}</TableCell>
                     <TableCell className="font-mono text-xs">{a.ipAddress}</TableCell>
                     <TableCell>
@@ -1172,7 +1260,7 @@ export function AuditLogs() {
                 {rows.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={8}
                       className="py-8 text-center text-sm text-muted-foreground"
                     >
                       No activity matches your filters.

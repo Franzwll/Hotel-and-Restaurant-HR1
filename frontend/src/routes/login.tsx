@@ -36,33 +36,34 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
+// Order: Employee → HR Admin → Super Admin (Super Admin last as requested)
 const roles = [
   {
-    id: "superadmin" as const,
-    label: "Super Admin",
-    short: "Super Admin",
-    icon: ShieldCheck,
-    email: "superadmin@oxfordsuites.com.ph",
-    body: "Property-wide control of hotel and restaurant operations.",
-    to: "/superadmin",
+    id: "employee" as const,
+    label: "Employee",
+    short: "Employee",
+    icon: ConciergeBell,
+    email: "maria.santos@email.com",
+    body: "Front office, housekeeping, kitchen and service crew self-service.",
+    to: "/employee",
   },
   {
     id: "admin" as const,
     label: "HR Admin",
     short: "HR Admin",
     icon: UserCog,
-    email: "hr.admin@oxfordsuites.com.ph",
+    email: "hr.admin@email.com",
     body: "Recruitment, onboarding, 201 files and HR operations.",
     to: "/admin",
   },
   {
-    id: "employee" as const,
-    label: "Team Member",
-    short: "Team Member",
-    icon: ConciergeBell,
-    email: "maria.santos@oxfordsuites.com.ph",
-    body: "Front office, housekeeping, kitchen and service crew self-service.",
-    to: "/employee",
+    id: "superadmin" as const,
+    label: "Super Admin",
+    short: "Super Admin",
+    icon: ShieldCheck,
+    email: "superadmin@email.com",
+    body: "Property-wide control of hotel and restaurant operations.",
+    to: "/superadmin",
   },
 ];
 
@@ -77,7 +78,7 @@ const brigades = [
 
 function LoginPage() {
   const navigate = useNavigate();
-  const [roleId, setRoleId] = useState<(typeof roles)[number]["id"]>("admin");
+  const [roleId, setRoleId] = useState<(typeof roles)[number]["id"]>("employee");
   const [show, setShow] = useState(false);
   const [password, setPassword] = useState("demo1234");
   const [error, setError] = useState("");
@@ -189,7 +190,7 @@ function LoginPage() {
               if (password.length < 6) return setError("Password must be at least 6 characters.");
               setError("");
               toast.success(`Welcome back — signed in as ${role.label}`);
-              navigate({ to: role.to });
+              navigate({ to: "/otp", search: { role: role.to } });
             }}
           >
             <div className="space-y-1.5">
@@ -201,7 +202,7 @@ function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@oxfordsuites.com.ph"
+                  placeholder="you@email.com"
                   className="pl-9"
                   autoComplete="username"
                 />
@@ -257,17 +258,6 @@ function LoginPage() {
               Sign in as {role.label}
             </Button>
           </form>
-
-          <div className="mt-8 space-y-2 border-t border-border pt-5">
-            <p className="flex items-start gap-2 text-xs text-muted-foreground">
-              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
-              Access is role-based and every action is written to the system audit log.
-            </p>
-            <p className="flex items-start gap-2 text-xs text-muted-foreground">
-              <HelpCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
-              No account yet? Ask the HR office at the 2nd floor admin desk to create one.
-            </p>
-          </div>
 
           <p className="mt-7 text-center text-sm text-muted-foreground">
             Looking for work?{" "}

@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 
 import { PublicShell } from "@/components/public/PublicShell";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,8 @@ const types = [...new Set(jobs.map((j) => j.employmentType))];
 const experiences = [...new Set(jobs.map((j) => j.experience))];
 const educations = [...new Set(jobs.map((j) => j.education))];
 
+const JOBS_PER_PAGE = 5;
+
 function FindJobs() {
   const [q, setQ] = useState("");
   const [dept, setDept] = useState<string[]>([]);
@@ -43,6 +45,7 @@ function FindJobs() {
   const [exp, setExp] = useState<string[]>([]);
   const [edu, setEdu] = useState<string[]>([]);
   const [maxSalary, setMaxSalary] = useState(30000);
+  const [page, setPage] = useState(1);
 
   const toggle = (list: string[], set: (v: string[]) => void, value: string) =>
     set(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -63,6 +66,17 @@ function FindJobs() {
     [q, dept, type, exp, edu, maxSalary],
   );
 
+  // Reset page when filters change
+  const handleFilterChange = <T,>(setter: (v: T) => void) => (v: T) => {
+    setter(v);
+    setPage(1);
+  };
+
+  const pageCount = Math.max(1, Math.ceil(results.length / JOBS_PER_PAGE));
+  const safePage = Math.min(page, pageCount);
+  const from = (safePage - 1) * JOBS_PER_PAGE;
+  const pageItems = results.slice(from, from + JOBS_PER_PAGE);
+
   const FilterGroup = ({
     title,
     options,
@@ -75,7 +89,7 @@ function FindJobs() {
     onToggle: (v: string) => void;
   }) => (
     <div>
-      <p className="eyebrow mb-2">{title}</p>
+      <p className="mb-2 text-sm font-bold text-foreground">{title}</p>
       <div className="space-y-2">
         {options.map((o) => (
           <div key={o} className="flex items-center gap-2">
@@ -106,59 +120,73 @@ function FindJobs() {
 
         <div className="grid gap-8 lg:grid-cols-[280px_1fr]">
           <aside className="space-y-6 rounded-md border border-border bg-card p-5 lg:sticky lg:top-24 lg:h-fit">
+            {/* Search bar — first */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={q}
+                onChange={(e) => {
+                  handleFilterChange(setQ)(e.target.value);
+                }}
+                placeholder="Search jobs…"
+                className="pl-9"
+                id="job-search"
+              />
+            </div>
+
+            {/* Salary Grade — below search */}
             <div>
-              <p className="eyebrow mb-3">Salary Grade</p>
+              <p className="mb-2 text-sm font-bold text-foreground">Salary Grade</p>
               <Slider
                 value={[maxSalary]}
                 min={14000}
                 max={30000}
                 step={1000}
-                onValueChange={(v) => setMaxSalary(v[0] ?? 30000)}
+                onValueChange={(v) => {
+                  handleFilterChange(setMaxSalary)(v[0] ?? 30000);
+                }}
               />
               <p className="mt-2 text-xs text-muted-foreground">
                 Up to {peso(maxSalary)} starting salary
               </p>
             </div>
 
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search"
-                className="pl-9"
-              />
-            </div>
-
             <FilterGroup
               title="Position / Department"
               options={departments}
               selected={dept}
-              onToggle={(v) => toggle(dept, setDept, v)}
+              onToggle={(v) => {
+                toggle(dept, handleFilterChange(setDept), v);
+              }}
             />
             <FilterGroup
               title="Employment Type"
               options={types}
               selected={type}
-              onToggle={(v) => toggle(type, setType, v)}
+              onToggle={(v) => {
+                toggle(type, handleFilterChange(setType), v);
+              }}
             />
             <FilterGroup
               title="Experience"
               options={experiences}
               selected={exp}
-              onToggle={(v) => toggle(exp, setExp, v)}
+              onToggle={(v) => {
+                toggle(exp, handleFilterChange(setExp), v);
+              }}
             />
             <FilterGroup
               title="Education"
               options={educations}
               selected={edu}
-              onToggle={(v) => toggle(edu, setEdu, v)}
+              onToggle={(v) => {
+                toggle(edu, handleFilterChange(setEdu), v);
+              }}
             />
           </aside>
 
-
           <div className="space-y-5">
-            {results.map((job) => (
+            {pageItems.map((job) => (
               <Card key={job.id} className="border-border/70">
                 <CardContent className="p-6">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -203,6 +231,50 @@ function FindJobs() {
                 <p className="text-sm text-muted-foreground">
                   No vacancies match your filters. Try widening your search.
                 </p>
+              </div>
+            )}
+
+            {/* Pagination */}
+            {results.length > 0 && (
+              <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+                <p className="text-sm text-muted-foreground">
+                  Showing {from + 1}–{Math.min(from + JOBS_PER_PAGE, results.length)} of{" "}
+                  {results.length} {results.length === 1 ? "vacancy" : "vacancies"}
+                </p>
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
+                    <Button
+                      key={p}
+                      size="icon"
+                      variant={p === safePage ? "default" : "outline"}
+                      className="h-8 w-8 text-xs"
+                      onClick={() => setPage(p)}
+                      aria-label={`Page ${p}`}
+                    >
+                      {p}
+                    </Button>
+                  ))}
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8"
+                    disabled={safePage >= pageCount}
+                    onClick={() => setPage((p) => p + 1)}
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             )}
           </div>

@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { Mail, MapPin, Phone } from "lucide-react";
+import { useState } from "react";
+import { Mail, MapPin, Menu, Phone, X } from "lucide-react";
 
 import { Logo } from "@/components/brand/Logo";
 import { Chatbot } from "@/components/public/Chatbot";
@@ -16,14 +17,17 @@ const links = [
 ];
 
 export function PublicShell({ children }: { children: ReactNode }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-18 max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-8">
-          <Link to="/" className="shrink-0">
+          <Link to="/" className="shrink-0" onClick={() => setMenuOpen(false)}>
             <Logo />
           </Link>
 
+          {/* Desktop nav */}
           <nav className="hidden items-center gap-1 lg:flex">
             {links.map((l) => (
               <Link
@@ -38,29 +42,48 @@ export function PublicShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
 
-          <div className="flex items-center gap-2">
-            <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+          {/* Desktop CTA */}
+          <div className="hidden items-center gap-2 lg:flex">
+            <Button asChild size="sm">
               <Link to="/login">Login</Link>
             </Button>
-            <Button asChild size="sm">
-              <Link to="/jobs">Find Jobs</Link>
+          </div>
+
+          {/* Mobile: Login + Burger */}
+          <div className="flex items-center gap-2 lg:hidden">
+            <Button asChild size="sm" variant="outline" className="text-xs">
+              <Link to="/login">Login</Link>
             </Button>
+            <button
+              type="button"
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              onClick={() => setMenuOpen((v) => !v)}
+              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
           </div>
         </div>
 
-        <div className="flex gap-1 overflow-x-auto border-t border-border px-4 py-2 lg:hidden">
-          {links.map((l) => (
-            <Link
-              key={l.to}
-              to={l.to}
-              activeOptions={{ exact: l.to === "/" }}
-              className="whitespace-nowrap rounded-md bg-muted px-3 py-1.5 text-xs text-muted-foreground"
-              activeProps={{ className: "bg-primary text-primary-foreground" }}
-            >
-              {l.label}
-            </Link>
-          ))}
-        </div>
+        {/* Mobile burger dropdown */}
+        {menuOpen && (
+          <div className="border-t border-border bg-background px-4 pb-4 pt-2 lg:hidden">
+            <nav className="flex flex-col gap-1">
+              {links.map((l) => (
+                <Link
+                  key={l.to}
+                  to={l.to}
+                  activeOptions={{ exact: l.to === "/" }}
+                  onClick={() => setMenuOpen(false)}
+                  className="rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  activeProps={{ className: "bg-primary/10 text-primary font-semibold" }}
+                >
+                  {l.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+        )}
       </header>
 
       <main className="flex-1">{children}</main>
