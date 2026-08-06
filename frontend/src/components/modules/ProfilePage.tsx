@@ -123,7 +123,7 @@ export function ProfilePage({ role }: { role: Role }) {
     <div>
       <PageHeader
         eyebrow={roleMeta[role].label}
-        title="Profile ngani"
+        title="My Profile"
         description="Your account details, contact information and login activity."
       />
 
