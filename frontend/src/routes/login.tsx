@@ -109,7 +109,7 @@ function LoginPage() {
             <Logo tone="invert" />
           </Link>
           <span className="rounded-full border border-primary-foreground/30 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-primary-foreground/80">
-            Est. Makati City
+            Est. 1995
           </span>
         </div>
 
