@@ -53,7 +53,7 @@ function Landing() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg">
               <Link to="/jobs">
-                Find Jobs <ArrowRight className="ml-2 h-4 w-4" />
+                Be One of Us <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
             <Button
