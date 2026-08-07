@@ -20,6 +20,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
+import { systemUsers } from "@/data/users";
+import { newHires } from "@/data/hr";
+
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
@@ -188,6 +191,21 @@ function LoginPage() {
               e.preventDefault();
               if (!email.includes("@")) return setError("Enter a valid work email address.");
               if (password.length < 6) return setError("Password must be at least 6 characters.");
+
+              // Check pre-onboarding attempt
+              const preOnboardingHire = newHires.find(
+                (nh) => nh.email.toLowerCase() === email.toLowerCase() && nh.stage === "Pre-onboarding"
+              );
+              if (preOnboardingHire) {
+                return setError("Account not created yet. Pre-onboarded candidates receive ESS access upon entering Probationary status.");
+              }
+
+              // Check deactivated account
+              const matchingUser = systemUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
+              if (matchingUser && matchingUser.status === "Disabled") {
+                return setError("Account deactivated due to employee exit/separation status. Please contact HR for assistance.");
+              }
+
               setError("");
               toast.success(`Welcome back — signed in as ${role.label}`);
               navigate({ to: "/otp", search: { role: role.to } });

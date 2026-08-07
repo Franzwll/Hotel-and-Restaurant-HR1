@@ -1,7 +1,9 @@
 import { useState } from "react";
 import {
   ArrowLeftRight,
+  Award,
   Building2,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -10,6 +12,8 @@ import {
   Search,
   Send,
   Trash2,
+  TrendingUp,
+  UserX,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -61,6 +65,7 @@ import {
   type Position,
   type Employee,
 } from "@/data/hr";
+import { createProbationaryUserAccount, deactivateUserAccount, addAuditLog } from "@/data/users";
 import { cn } from "@/lib/utils";
 import { requisitionStore, useRequisitions } from "@/data/requisitions";
 import { SortHead, useSort } from "@/components/portal/sortable";
@@ -73,13 +78,29 @@ const initialsOf = (name: string) =>
     .join("")
     .toUpperCase();
 
-/** Standalone Employee List tab component */
+/** Standalone Employee List tab component with full Lifecycle Actions */
 function EmployeeListTab() {
+  const [empList, setEmpList] = useState<Employee[]>(employees);
   const [empSearch, setEmpSearch] = useState("");
   const [empDeptFilter, setEmpDeptFilter] = useState("all");
   const [empStatusFilter, setEmpStatusFilter] = useState("all");
+  const [empTypeFilter, setEmpTypeFilter] = useState("all");
 
-  const filteredEmployees = employees.filter((e: Employee) => {
+  // Modal states
+  const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
+  const [showPromoteModal, setShowPromoteModal] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
+
+  // Promotion Form State
+  const [newPosition, setNewPosition] = useState("");
+  const [newSalaryGrade, setNewSalaryGrade] = useState("SG-12 (₱28,000 – ₱35,000)");
+  const [promotionNotes, setPromotionNotes] = useState("");
+
+  // Exit Form State
+  const [exitType, setExitType] = useState<"Resigned" | "Retired" | "Terminated">("Resigned");
+  const [exitNotes, setExitNotes] = useState("");
+
+  const filteredEmployees = empList.filter((e: Employee) => {
     const q = empSearch.trim().toLowerCase();
     const matchesSearch =
       !q ||
@@ -89,20 +110,136 @@ function EmployeeListTab() {
       e.department.toLowerCase().includes(q);
     const matchesDept = empDeptFilter === "all" || e.department === empDeptFilter;
     const matchesStatus = empStatusFilter === "all" || e.status === empStatusFilter;
-    return matchesSearch && matchesDept && matchesStatus;
+    const matchesType = empTypeFilter === "all" || e.employmentType === empTypeFilter;
+    return matchesSearch && matchesDept && matchesStatus && matchesType;
   });
 
   const empPage = usePagination(filteredEmployees);
   const deptOptions = Array.from(new Set(employees.map((e: Employee) => e.department))).sort();
+
+  // Handler: Regularize Probationary Employee
+  const handleRegularize = (emp: Employee) => {
+    const updated = empList.map((e) =>
+      e.id === emp.id ? { ...e, employmentType: "Regular" as const, status: "Active" as const } : e
+    );
+    setEmpList(updated);
+    createProbationaryUserAccount(emp);
+    addAuditLog({
+      user: "HR Admin",
+      role: "Admin",
+      action: `Passed HR3 Evaluation & Regularized employee ${emp.name} (${emp.id})`,
+      module: "Core HCM",
+      ipAddress: "192.168.10.22",
+      severity: "Info",
+      department: emp.department,
+      device: "Edge on Windows",
+    });
+    toast.success(`${emp.name} has passed evaluation and is now a Regular Employee! User account active.`);
+  };
+
+  // Handler: Promote Employee
+  const handlePromoteSubmit = () => {
+    if (!selectedEmp || !newPosition) {
+      toast.error("Please enter the new position title.");
+      return;
+    }
+    const oldPosition = selectedEmp.position;
+    const oldSalary = selectedEmp.salaryGrade || "SG-08 (₱18,000 – ₱22,000)";
+
+    const updated: Employee[] = empList.map((e) => {
+      if (e.id === selectedEmp.id) {
+        const history = e.promotionHistory || [];
+        return {
+          ...e,
+          position: newPosition,
+          salaryGrade: newSalaryGrade,
+          status: "Active" as const,
+          promotionHistory: [
+            ...history,
+            {
+              date: new Date().toISOString().slice(0, 10),
+              oldPosition,
+              newPosition,
+              oldSalaryGrade: oldSalary,
+              newSalaryGrade,
+              notes: promotionNotes || "Succession planning promotion",
+            },
+          ],
+        };
+      }
+      return e;
+    });
+
+    setEmpList(updated);
+    addAuditLog({
+      user: "HR Admin",
+      role: "Admin",
+      action: `Promoted ${selectedEmp.name} to ${newPosition} (${newSalaryGrade})`,
+      module: "Core HCM",
+      ipAddress: "192.168.10.22",
+      severity: "Info",
+      department: selectedEmp.department,
+      device: "Edge on Windows",
+    });
+
+    toast.success(`Promoted ${selectedEmp.name} to ${newPosition}! Salary Grade updated.`);
+    setShowPromoteModal(false);
+    setSelectedEmp(null);
+    setNewPosition("");
+    setPromotionNotes("");
+  };
+
+  // Handler: Exit / Separation Processing
+  const handleExitSubmit = () => {
+    if (!selectedEmp) return;
+
+    const updated: Employee[] = empList.map((e) => {
+      if (e.id === selectedEmp.id) {
+        return {
+          ...e,
+          status: exitType as any,
+          exitDetails: {
+            exitType,
+            exitDate: new Date().toISOString().slice(0, 10),
+            clearanceStatus: "Pending" as const,
+            coeStatus: "Pending" as const,
+            notes: exitNotes || `Employee exit via ${exitType}`,
+          },
+        };
+      }
+      return e;
+    });
+
+    setEmpList(updated);
+
+    // DEACTIVATE USER ACCOUNT IN USER MANAGEMENT
+    deactivateUserAccount(selectedEmp.email, `Exit Status: ${exitType}`);
+
+    addAuditLog({
+      user: "HR Admin",
+      role: "Admin",
+      action: `Processed Exit Status (${exitType}) for ${selectedEmp.name}. ESS User account deactivated.`,
+      module: "Core HCM",
+      ipAddress: "192.168.10.22",
+      severity: "Warning",
+      department: selectedEmp.department,
+      device: "Edge on Windows",
+    });
+
+    toast.warning(`Exit processed for ${selectedEmp.name} (${exitType}). System user account disabled.`);
+    setShowExitModal(false);
+    setSelectedEmp(null);
+    setExitNotes("");
+  };
 
   return (
     <Card className="border-border/70">
       <CardContent className="p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-display text-2xl font-semibold">Employee List</h2>
+            <h2 className="font-display text-2xl font-semibold">Employee Roster & Lifecycle Management</h2>
             <p className="text-xs text-muted-foreground">
-              {filteredEmployees.length} employee{filteredEmployees.length !== 1 ? "s" : ""} shown
+              {filteredEmployees.length} employee{filteredEmployees.length !== 1 ? "s" : ""} shown · Core HCM master record
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -116,7 +253,7 @@ function EmployeeListTab() {
               />
             </div>
             <Select value={empDeptFilter} onValueChange={setEmpDeptFilter}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-44">
                 <SelectValue placeholder="All departments" />
               </SelectTrigger>
               <SelectContent>
@@ -126,6 +263,16 @@ function EmployeeListTab() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={empTypeFilter} onValueChange={setEmpTypeFilter}>
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="All types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                <SelectItem value="Probationary">Probationary</SelectItem>
+                <SelectItem value="Regular">Regular</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={empStatusFilter} onValueChange={setEmpStatusFilter}>
               <SelectTrigger className="w-36">
                 <SelectValue placeholder="All statuses" />
@@ -133,11 +280,14 @@ function EmployeeListTab() {
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="Active">Active</SelectItem>
-                <SelectItem value="Inactive">Inactive</SelectItem>
+                <SelectItem value="Resigned">Resigned</SelectItem>
+                <SelectItem value="Retired">Retired</SelectItem>
+                <SelectItem value="Terminated">Terminated</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
+
         <div className="mt-4 overflow-x-auto">
           <Table>
             <TableHeader>
@@ -145,10 +295,11 @@ function EmployeeListTab() {
                 <TableHead>Employee ID</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Department</TableHead>
-                <TableHead>Position</TableHead>
+                <TableHead>Position &amp; Grade</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Date Hired</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-right">Lifecycle Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -157,7 +308,10 @@ function EmployeeListTab() {
                   <TableCell className="font-mono text-xs">{e.id}</TableCell>
                   <TableCell className="font-medium">{e.name}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{e.department}</TableCell>
-                  <TableCell className="text-sm">{e.position}</TableCell>
+                  <TableCell className="text-sm">
+                    <div>{e.position}</div>
+                    <div className="text-[11px] text-muted-foreground">{e.salaryGrade || "SG-08 (Standard)"}</div>
+                  </TableCell>
                   <TableCell>
                     <Badge
                       variant="outline"
@@ -179,17 +333,64 @@ function EmployeeListTab() {
                       className={
                         e.status === "Active"
                           ? "border-success/40 bg-success/10 text-success"
+                          : e.status === "Resigned" || e.status === "Retired" || e.status === "Terminated"
+                          ? "border-destructive/40 bg-destructive/10 text-destructive"
                           : "border-border text-muted-foreground"
                       }
                     >
                       {e.status}
                     </Badge>
                   </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1.5">
+                      {e.employmentType === "Probationary" && e.status === "Active" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs border-success/50 text-success hover:bg-success/10"
+                          onClick={() => handleRegularize(e)}
+                        >
+                          <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                          Regularize
+                        </Button>
+                      )}
+
+                      {e.status === "Active" && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              setSelectedEmp(e);
+                              setNewPosition(e.position);
+                              setShowPromoteModal(true);
+                            }}
+                          >
+                            <TrendingUp className="mr-1 h-3.5 w-3.5 text-primary" />
+                            Promote
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs text-destructive hover:bg-destructive/10"
+                            onClick={() => {
+                              setSelectedEmp(e);
+                              setShowExitModal(true);
+                            }}
+                          >
+                            <UserX className="mr-1 h-3.5 w-3.5" />
+                            Process Exit
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
               {filteredEmployees.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
                     No employees match your filters.
                   </TableCell>
                 </TableRow>
@@ -206,6 +407,122 @@ function EmployeeListTab() {
           label="employees"
           onPageChange={empPage.setPage}
         />
+
+        {/* PROMOTION MODAL */}
+        <Dialog open={showPromoteModal} onOpenChange={setShowPromoteModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Award className="h-5 w-5 text-primary" />
+                Promote Employee — {selectedEmp?.name}
+              </DialogTitle>
+              <DialogDescription>
+                Update employee position title and salary grade in Core HCM.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label>Current Position</Label>
+                <Input value={selectedEmp?.position || ""} disabled className="bg-muted" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>New Promoted Title</Label>
+                <Input
+                  value={newPosition}
+                  onChange={(e) => setNewPosition(e.target.value)}
+                  placeholder="e.g. Senior Receptionist / Supervisor"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>New Salary Grade &amp; Band</Label>
+                <Select value={newSalaryGrade} onValueChange={setNewSalaryGrade}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select salary band" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SG-10 (₱22,000 – ₱26,000)">SG-10 (₱22,000 – ₱26,000)</SelectItem>
+                    <SelectItem value="SG-12 (₱28,000 – ₱35,000)">SG-12 (₱28,000 – ₱35,000)</SelectItem>
+                    <SelectItem value="SG-15 (₱38,000 – ₱48,000)">SG-15 (₱38,000 – ₱48,000)</SelectItem>
+                    <SelectItem value="SG-18 (₱50,000 – ₱65,000)">SG-18 (₱50,000 – ₱65,000)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Succession Planning &amp; Promotion Justification</Label>
+                <Textarea
+                  value={promotionNotes}
+                  onChange={(e) => setPromotionNotes(e.target.value)}
+                  placeholder="HR3 evaluation results, leadership performance rating, recommendation notes..."
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowPromoteModal(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handlePromoteSubmit}>
+                Confirm Promotion
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* EXIT SEPARATION MODAL */}
+        <Dialog open={showExitModal} onOpenChange={setShowExitModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <UserX className="h-5 w-5" />
+                Process Exit Status — {selectedEmp?.name}
+              </DialogTitle>
+              <DialogDescription>
+                Mark exit status in HCM. This will automatically deactivate their user account.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label>Exit Reason / Trigger</Label>
+                <Select value={exitType} onValueChange={(v: any) => setExitType(v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Resigned">Resigned (Initiated via ESS / HR)</SelectItem>
+                    <SelectItem value="Retired">Retired (Age / Retirement policy)</SelectItem>
+                    <SelectItem value="Terminated">Terminated (Performance / Disciplinary)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Separation &amp; Clearance Notes</Label>
+                <Textarea
+                  value={exitNotes}
+                  onChange={(e) => setExitNotes(e.target.value)}
+                  placeholder="Exit interview notes, clearance status details, COE request..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400">
+                ⚠️ <strong>Security Notice</strong>: Confirming exit status will instantly revoke ESS login credentials in User Management.
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowExitModal(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleExitSubmit}>
+                Process Exit &amp; Deactivate Account
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

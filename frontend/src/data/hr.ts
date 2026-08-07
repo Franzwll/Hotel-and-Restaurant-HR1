@@ -439,7 +439,23 @@ export type Employee = {
   email: string;
   phone: string;
   supervisor: string;
-  status: "Active" | "Inactive";
+  status: "Active" | "Probationary" | "Regular" | "Promoted" | "Resigned" | "Retired" | "Terminated" | "Inactive";
+  salaryGrade?: string;
+  promotionHistory?: Array<{
+    date: string;
+    oldPosition: string;
+    newPosition: string;
+    oldSalaryGrade: string;
+    newSalaryGrade: string;
+    notes: string;
+  }>;
+  exitDetails?: {
+    exitType: "Resigned" | "Retired" | "Terminated";
+    exitDate: string;
+    clearanceStatus: "Pending" | "Cleared";
+    coeStatus: "Pending" | "Issued";
+    notes: string;
+  };
 };
 
 export const employees: Employee[] = [
