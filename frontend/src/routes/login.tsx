@@ -1,18 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  ConciergeBell,
-  Eye,
-  EyeOff,
-  HelpCircle,
-  Lock,
-  Mail,
-  ShieldCheck,
-  UserCog,
-} from "lucide-react";
+import { ConciergeBell, Eye, EyeOff, Lock, Mail, ShieldCheck, UserCog } from "lucide-react";
 import { toast } from "sonner";
 
-import loginHero from "@/assets/login-hospitality.jpg";
+import loginHero from "@/assets/oxford-suite-makati-interior1.png";
 import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,16 +14,23 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Portal Login — Oxford Suites Makati HRMS" },
+      { title: "Oxford Suites Makati — Enterprise Portal" },
       {
         name: "description",
         content:
-          "Sign in to the Oxford Suites Makati HRMS portal as Super Admin, Admin, or Employee to manage recruitment, HR records, and self-service.",
+          "Secure access to the Oxford Suites Makati hotel and restaurant management platform — HR, finance, hotel, restaurant, and back-office operations.",
       },
-      { property: "og:title", content: "Portal Login — Oxford Suites Makati HRMS" },
-      { property: "og:description", content: "Sign in to the Oxford Suites Makati HRMS portal." },
+      { property: "og:title", content: "Oxford Suites Makati — Enterprise Portal" },
+      {
+        property: "og:description",
+        content:
+          "Secure access to the Oxford Suites Makati hotel and restaurant management platform.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+
   component: LoginPage,
 });
 
@@ -67,14 +65,14 @@ const roles = [
   },
 ];
 
-const brigades = [
-  "Front Office",
-  "Housekeeping",
-  "Food & Beverage Service",
-  "Kitchen Brigade",
-  "Banquets & Events",
-  "Engineering",
+const facts = [
+  { k: "Client", v: "Oxford Suites Makati" },
+  { k: "Industry", v: "Hotel & Restaurant" },
+  { k: "Platform", v: "Enterprise Operations" },
 ];
+
+
+
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -92,98 +90,135 @@ function LoginPage() {
   };
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
+    <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,30rem)] xl:grid-cols-[minmax(0,1.1fr)_minmax(27rem,34rem)]">
       {/* Property panel */}
-      <div className="relative hidden flex-col justify-between overflow-hidden px-12 py-10 text-primary-foreground lg:flex">
+      <div
+        className="relative hidden overflow-hidden bg-primary text-primary-foreground lg:flex lg:flex-col"
+        style={{ padding: "clamp(1.75rem, 3vw, 4rem)" }}
+      >
         <img
           src={loginHero}
-          alt="Oxford Suites Makati lobby opening into the fine-dining restaurant at dusk"
-          width={1024}
-          height={1536}
-          className="absolute inset-0 h-full w-full object-cover"
+          alt="Oxford Suites Makati lobby with marble flooring and warm lighting"
+          sizes="(min-width: 1024px) 55vw, 100vw"
+          className="absolute inset-0 h-full w-full scale-105 object-cover object-center"
         />
-        <div className="absolute inset-0 bg-primary/75 mix-blend-multiply" />
-        <div className="absolute inset-0 bg-gradient-to-t from-foreground/85 via-foreground/35 to-foreground/55" />
+        {/* Layered scrims: brand tint, left depth for text contrast, vignette */}
+        <div aria-hidden className="absolute inset-0 bg-primary/65 mix-blend-multiply" />
+        <div
+          aria-hidden
+          className="absolute inset-0 bg-gradient-to-tr from-foreground/85 via-foreground/40 to-transparent"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 shadow-[inset_0_0_9rem_2rem_hsl(0_0%_0%/0.45)]"
+        />
 
-        <div className="relative flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-3">
-            <Logo tone="invert" />
-          </Link>
-          <span className="rounded-full border border-primary-foreground/30 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-primary-foreground/80">
-            Est. 1995
-          </span>
-        </div>
-
-        <div className="relative max-w-lg">
-          <p className="eyebrow text-gold">Hotel &amp; Restaurant Human Resource System</p>
-          <div className="mt-4 h-px w-16 bg-gold/70" />
-          <h1 className="mt-6 font-display text-5xl font-semibold leading-[1.08]">
-            The house is ready.
-            <br />
-            Welcome back to duty.
-          </h1>
-          <p className="mt-5 text-sm leading-relaxed text-primary-foreground/85">
-            One portal for the entire property — from the front desk and housekeeping floors to the
-            kitchen brigade and banquet service. Hiring, 201 files, schedules and employee
-            self-service, kept in a single register.
-          </p>
-
-          <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-2 text-xs text-primary-foreground/80">
-            {brigades.map((b) => (
-              <span key={b} className="flex items-center gap-2">
-                <span className="h-1 w-1 rounded-full bg-gold" />
-                {b}
-              </span>
-            ))}
+        <div className="relative z-10 flex min-h-0 w-full flex-1 flex-col justify-between gap-10">
+          {/* Top row */}
+          <div className="flex items-start justify-between gap-6">
+            <Link to="/" className="block">
+              <Logo tone="invert" size="lg" />
+            </Link>
+            <span className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary-foreground/25 bg-foreground/25 px-3 py-1 text-[0.7rem] font-medium uppercase tracking-[0.14em] text-primary-foreground/85 backdrop-blur-sm">
+              <ShieldCheck className="h-3.5 w-3.5 text-gold" />
+              Oxford Suites Makati
+            </span>
           </div>
-        </div>
 
-        <div className="relative flex items-center justify-between border-t border-primary-foreground/20 pt-5 text-xs text-primary-foreground/70">
-          <span className="flex items-center gap-2">
-            <ShieldCheck className="h-3.5 w-3.5 text-gold" />
-            Role-based access · Audited sessions
-          </span>
-          <span>24-hour front desk · +63 2 8888 8888</span>
+          {/* Bottom stack — single left alignment axis */}
+          <div className="flex min-h-0 max-w-[40rem] flex-col gap-7">
+            <span aria-hidden className="block h-px w-16 bg-gold" />
+
+            <h1
+              className="max-w-[18ch] font-display font-semibold leading-[1.1] tracking-tight"
+              style={{ fontSize: "clamp(2rem, 2.8vw, 3.25rem)" }}
+            >
+              Welcome to Oxford Suites Makati
+            </h1>
+
+            <h2
+              className="-mt-4 max-w-[26ch] font-display font-medium leading-[1.2] tracking-tight text-primary-foreground/90"
+              style={{ fontSize: "clamp(1.25rem, 1.6vw, 1.75rem)" }}
+            >
+              Where hospitality meets excellence
+            </h2>
+
+            <p
+              className="max-w-[54ch] text-primary-foreground/80"
+              style={{ fontSize: "clamp(0.875rem, 1vw, 1rem)" }}
+            >
+              This platform supports the Oxford Suites Makati team in delivering thoughtful,
+              seamless service across every guest touchpoint — from hotel rooms and restaurant
+              tables to the operations that keep everything running behind the scenes.
+            </p>
+
+            <blockquote className="border-l-2 border-gold pl-5 pt-1 text-primary-foreground/85">
+              <p className="text-sm font-medium italic leading-relaxed">
+                "Great service starts with a team that is organized, supported, and empowered."
+              </p>
+            </blockquote>
+
+            <dl className="flex flex-wrap gap-x-10 gap-y-4 border-t border-primary-foreground/20 pt-6">
+              {facts.map((i) => (
+                <div key={i.k} className="min-w-0">
+                  <dt className="text-[0.65rem] uppercase tracking-[0.16em] text-primary-foreground/60">
+                    {i.k}
+                  </dt>
+                  <dd className="mt-1 text-sm font-medium text-primary-foreground/90">{i.v}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
         </div>
       </div>
 
       {/* Credential panel */}
-      <div className="flex items-center justify-center bg-background px-5 py-12 sm:px-10">
-        <div className="w-full max-w-md">
-          <Link to="/" className="mb-10 flex items-center gap-3 lg:hidden">
+      <div className="flex min-w-0 items-center justify-center overflow-y-auto bg-background px-5 py-10 sm:px-8 sm:py-14 lg:px-10">
+        <div className="w-full max-w-md space-y-8">
+          <Link to="/" className="flex items-center gap-3 lg:hidden">
             <Logo />
           </Link>
 
-          <p className="eyebrow">Staff Portal Access</p>
-          <h2 className="mt-2 font-display text-4xl font-semibold">Sign in</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Select your post, then sign in with your work credentials.
-          </p>
-          <div className="gold-rule my-7" />
-
-          <div className="grid grid-cols-3 gap-2 rounded-md border border-border bg-muted/40 p-1">
-            {roles.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => pickRole(r.id)}
-                aria-pressed={roleId === r.id}
-                className={cn(
-                  "flex flex-col items-center gap-1.5 rounded-sm px-2 py-3 text-center transition-colors",
-                  roleId === r.id
-                    ? "bg-card text-foreground shadow-sm ring-1 ring-primary/25"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <r.icon className={cn("h-4 w-4", roleId === r.id ? "text-primary" : "")} />
-                <span className="text-xs font-medium leading-tight">{r.short}</span>
-              </button>
-            ))}
+          <div className="space-y-2">
+            <p className="eyebrow">Secure Access</p>
+            <h2 className="font-display text-3xl font-semibold sm:text-4xl">Sign in</h2>
+            <p className="text-sm text-muted-foreground">
+              Enter your Oxford Suites credentials to access your assigned workspace.
+            </p>
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">{role.body}</p>
+
+          <div className="gold-rule" />
+
+          <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-2 rounded-md border border-border bg-muted/40 p-1">
+              {roles.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => pickRole(r.id)}
+                  aria-pressed={roleId === r.id}
+                  className={cn(
+                    "flex min-h-[4.25rem] flex-col items-center justify-center gap-1.5 rounded-sm px-1.5 py-3 text-center transition-colors",
+                    roleId === r.id
+                      ? "bg-card text-foreground shadow-sm ring-1 ring-primary/25"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <r.icon className={cn("h-4 w-4 shrink-0", roleId === r.id ? "text-primary" : "")} />
+                  <span className="text-[0.7rem] font-medium leading-tight sm:text-xs">
+                    {r.short}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <p className="min-h-[2.5rem] text-xs leading-relaxed text-muted-foreground">
+              {role.body}
+            </p>
+          </div>
 
           <form
-            className="mt-7 space-y-5"
+            className="space-y-5"
             onSubmit={(e) => {
               e.preventDefault();
               if (!email.includes("@")) return setError("Enter a valid work email address.");
@@ -203,7 +238,7 @@ function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@email.com"
-                  className="pl-9"
+                  className="h-11 pl-9"
                   autoComplete="username"
                 />
               </div>
@@ -218,7 +253,7 @@ function LoginPage() {
                   type={show ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="px-9"
+                  className="h-11 px-9"
                   autoComplete="current-password"
                 />
                 <button
@@ -238,7 +273,7 @@ function LoginPage() {
               </p>
             )}
 
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <div className="flex items-center gap-2">
                 <Checkbox id="remember" defaultChecked />
                 <Label htmlFor="remember" className="text-sm font-normal text-muted-foreground">
@@ -254,12 +289,12 @@ function LoginPage() {
               </button>
             </div>
 
-            <Button type="submit" size="lg" className="w-full">
+            <Button type="submit" size="lg" className="h-12 w-full">
               Sign in as {role.label}
             </Button>
           </form>
 
-          <p className="mt-7 text-center text-sm text-muted-foreground">
+          <p className="text-center text-sm text-muted-foreground">
             Looking for work?{" "}
             <Link to="/jobs" className="font-medium text-primary hover:underline">
               Browse job openings

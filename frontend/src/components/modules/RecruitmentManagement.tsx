@@ -7,6 +7,8 @@ import {
   Copy,
   Facebook,
   Globe,
+  FilePlus2,
+  FileText,
   GripVertical,
   Instagram,
   LayoutGrid,
@@ -51,10 +53,55 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import { DEFAULT_PAGE_SIZE } from "@/hooks/usePagination";
 import { Textarea } from "@/components/ui/textarea";
 import { jobs as seedJobs, peso, type Job } from "@/data/jobs";
-import { departments } from "@/data/hr";
-import { requisitionStore, useRequisitions } from "@/data/requisitions";
+import { departments, positions } from "@/data/hr";
+import { requisitionStore, useRequisitions, type Requisition } from "@/data/requisitions";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useSort } from "@/components/portal/sortable";
 import { cn } from "@/lib/utils";
+
+/** Colour-coded urgency badge classes. */
+const urgencyBadge = (urgency: string) =>
+  urgency === "Urgent"
+    ? "border-destructive/40 bg-destructive/10 text-destructive"
+    : urgency === "High"
+      ? "border-warning/40 bg-warning/20 text-warning-foreground"
+      : urgency === "Low"
+        ? "border-border bg-muted text-muted-foreground"
+        : "border-primary/30 bg-secondary/50 text-primary";
+
+/** One-click reveal of a requisition's justification note. */
+function RequisitionNote({ req, label = "View note" }: { req: Requisition; label?: string }) {
+  if (!req.justification) return null;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="outline" className="gap-1.5">
+          <FileText className="h-3.5 w-3.5" /> {label}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 space-y-2 p-4 text-left">
+        <div>
+          <p className="font-display text-sm font-semibold">Request note — {req.id}</p>
+          <p className="text-[0.7rem] text-muted-foreground">
+            {req.position} · {req.department} · {req.count} opening(s)
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className={urgencyBadge(req.urgency)}>
+            {req.urgency} urgency
+          </Badge>
+          <span className="text-[0.7rem] text-muted-foreground">
+            Requested {req.requestedAt}
+          </span>
+        </div>
+        <p className="rounded-md bg-secondary/40 p-3 text-xs italic leading-relaxed text-muted-foreground">
+          “{req.justification}”
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 
 const templates = [
   {
@@ -253,6 +300,9 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
 
   const [deptDialogOpen, setDeptDialogOpen] = useState(false);
   const [pendingDept, setPendingDept] = useState(departments[0]?.name ?? "Front Office");
+  const [pendingPosition, setPendingPosition] = useState("");
+  /** False shows the "create a job posting" entry card instead of the builder canvas. */
+  const [builderStarted, setBuilderStarted] = useState(false);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
   const [pendingTab, setPendingTab] = useState<string | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<string>(snapshotOf(blankDraft, []));
@@ -282,8 +332,43 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
   });
 
   const saveDraftAction = () => {
+    const title = draft.title.trim() || "Untitled position";
+    const draftId =
+      editingJobId ??
+      `draft-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now().toString().slice(-4)}`;
+    const existing = jobList.find((j) => j.id === draftId);
+    const payload: Job = {
+      id: draftId,
+      title,
+      department: draft.department,
+      employmentType: draft.employmentType as Job["employmentType"],
+      schedule: draft.schedule,
+      salaryMin: Number(draft.salaryMin) || 0,
+      salaryMax: Number(draft.salaryMax) || 0,
+      vacancies: Number(draft.vacancies) || 1,
+      filled: existing?.filled ?? 0,
+      posted: existing?.posted ?? new Date().toISOString().slice(0, 10),
+      status: "Draft",
+      active: false,
+      experience: existing?.experience ?? "1-2 Years",
+      education: existing?.education ?? "High School Graduate",
+      summary: draft.description,
+      description: draft.description,
+      responsibilities: lines(draft.responsibilities),
+      qualifications: lines(draft.qualifications),
+      skills: lines(draft.skills),
+      benefits: lines(draft.benefits),
+      applicants: existing?.applicants ?? 0,
+      platforms: [],
+    };
+    setJobList((prev) =>
+      prev.some((j) => j.id === draftId)
+        ? prev.map((j) => (j.id === draftId ? payload : j))
+        : [payload, ...prev],
+    );
+    setEditingJobId(draftId);
     setSavedSnapshot(snapshotOf(draft, blocks));
-    toast.success("Draft saved");
+    toast.success(`Draft saved — “${title}” is in your postings as a draft`);
   };
 
   const toggleActive = (id: string) =>
@@ -372,19 +457,21 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
     );
     setEditingJobId(null);
     setSourceReqId(null);
+    setBuilderStarted(false);
     setSavedSnapshot(snapshotOf(blankDraft, []));
   };
 
-  const startNewPost = (department: string) => {
-    const seeded: Draft = { ...blankDraft, department };
+  const startNewPost = (department: string, position?: string) => {
+    const seeded: Draft = { ...blankDraft, department, title: position ?? "" };
     setDraft(seeded);
-    setBlocks([]);
+    setBlocks(position ? ["title"] : []);
+    setBuilderStarted(true);
     setEditingJobId(null);
     setSourceReqId(null);
     setMode("custom");
     setNewOpen(false);
     setDeptDialogOpen(false);
-    setSavedSnapshot(snapshotOf(seeded, []));
+    setSavedSnapshot(snapshotOf(seeded, position ? ["title"] : []));
     setTab("builder");
     setPendingTab(null);
   };
@@ -396,6 +483,7 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
     setEditingJobId(job.id);
     setSourceReqId(null);
     setMode("template");
+    setBuilderStarted(true);
     setSavedSnapshot(snapshotOf(seeded, fullBlocks));
     setTab("builder");
     toast.message(`Editing template for “${job.title}”`);
@@ -408,6 +496,7 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
     setEditingJobId(null);
     setSourceReqId(null);
     setMode("template");
+    setBuilderStarted(true);
     setSavedSnapshot(snapshotOf(seeded, fullBlocks));
     setTab("builder");
     toast.message(`Copied “${job.title}” — publish as a new posting`);
@@ -428,6 +517,7 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
     setEditingJobId(null);
     setSourceReqId(reqId);
     setMode("template");
+    setBuilderStarted(true);
     setSavedSnapshot(snapshotOf(seeded, fullBlocks));
     setTab("builder");
     toast.message(
@@ -563,12 +653,14 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
       setConfirmLeaveOpen(true);
       return;
     }
-    if (value === "builder" && !editingJobId && !sourceReqId && blocks.length === 0) {
-      setPendingDept(departments[0]?.name ?? "Front Office");
-      setDeptDialogOpen(true);
-      return;
+    if (value === "builder" && !editingJobId && !sourceReqId && !isDirty) {
+      // Always land on the dashed "Create a job posting" card first.
+      setBuilderStarted(false);
+      setDeptDialogOpen(false);
+      setNewOpen(false);
     }
     setTab(value);
+
   };
 
   const confirmLeaveSave = () => {
@@ -1076,41 +1168,58 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
                 {visibleRequisitions.map((r) => (
                   <div
                     key={r.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3"
+                    className="grid gap-3 rounded-lg border border-border p-4 transition-colors hover:border-primary/40 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
                   >
-                    <div className="max-w-xl">
-                      <p className="flex items-center gap-2 text-sm font-medium">
-                        {r.position} <span className="text-muted-foreground">· {r.department}</span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold">{r.position}</p>
+                        <Badge
+                          variant="outline"
+                          className={
+                            r.status === "Approved"
+                              ? "border-success/30 bg-success/15 text-success"
+                              : r.status === "Converted"
+                                ? "border-border bg-muted text-muted-foreground"
+                                : "border-warning/40 bg-warning/20 text-warning-foreground"
+                          }
+                        >
+                          {r.status}
+                        </Badge>
+                        <Badge variant="outline" className={urgencyBadge(r.urgency)}>
+                          {r.urgency} urgency
+                        </Badge>
                         {isNewRequisition(r.requestedAt) && (
                           <Badge className="bg-primary text-primary-foreground">New</Badge>
                         )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {r.count} opening(s) · {r.urgency} urgency · requested {r.requestedAt}
-                      </p>
-                      {r.justification && (
-                        <p className="mt-1.5 rounded-md bg-secondary/40 px-2 py-1.5 text-[0.7rem] italic text-muted-foreground">
-                          “{r.justification}”
-                        </p>
-                      )}
+                      </div>
+                      <dl className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1.5">
+                          <dt className="uppercase tracking-wide">Ref</dt>
+                          <dd className="font-medium text-foreground">{r.id}</dd>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <dt className="uppercase tracking-wide">Department</dt>
+                          <dd className="font-medium text-foreground">{r.department}</dd>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <dt className="uppercase tracking-wide">Openings</dt>
+                          <dd className="font-medium text-foreground">{r.count}</dd>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <dt className="uppercase tracking-wide">Requested</dt>
+                          <dd className="font-medium text-foreground">{r.requestedAt}</dd>
+                        </div>
+                      </dl>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={
-                          r.status === "Approved"
-                            ? "border-success/30 bg-success/15 text-success"
-                            : "border-warning/40 bg-warning/20 text-warning-foreground"
-                        }
-                      >
-                        {r.status}
-                      </Badge>
+                    <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                      <RequisitionNote req={r} />
                       <Button size="sm" onClick={() => convertRequisition(r.id)}>
                         Convert to job post
                       </Button>
                     </div>
                   </div>
                 ))}
+
                 {filteredRequisitions.length === 0 && (
                   <p className="py-8 text-center text-sm text-muted-foreground">
                     No requisitions match your filters.
@@ -1134,27 +1243,78 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
         </TabsContent>
 
         <TabsContent value="builder" className="mt-4">
+          {!builderStarted ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPendingDept(draft.department || departments[0]!.name);
+                setPendingPosition("");
+                setDeptDialogOpen(true);
+              }}
+              className="group flex min-h-[520px] w-full flex-col items-center justify-center gap-5 rounded-2xl border-2 border-dashed border-border bg-muted/20 p-12 text-center transition-all hover:border-primary/60 hover:bg-primary/5 active:scale-[0.995]"
+            >
+              <span className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                <FilePlus2 className="h-9 w-9" />
+              </span>
+              <span className="font-display text-3xl font-semibold">Create a job posting</span>
+              <span className="max-w-lg text-sm text-muted-foreground">
+                Choose a department and job position to start a new posting, then build it with
+                drag-and-drop content blocks and preview it across every hiring channel.
+              </span>
+              <span className="mt-1 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-card px-4 py-2 text-xs font-medium text-primary">
+                <Plus className="h-3.5 w-3.5" /> Start a new posting
+              </span>
+            </button>
+          ) : (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">Create job post</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setBuilderStarted(false);
+                  setNewOpen(false);
+                  setDeptDialogOpen(false);
+                }}
+                className="font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
+              >
+                Create job post
+              </button>
               <span>›</span>
-              <span>{draft.department || "Department"}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingDept(draft.department || departments[0]!.name);
+                  setPendingPosition(draft.title);
+                  setDeptDialogOpen(true);
+                }}
+                className="underline-offset-4 hover:text-primary hover:underline"
+              >
+                {draft.department || "Department"}
+              </button>
               <span>›</span>
-              <span className="font-medium text-primary">{draft.title || "Untitled position"}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingDept(draft.department || departments[0]!.name);
+                  setPendingPosition(draft.title);
+                  setDeptDialogOpen(true);
+                }}
+                className="font-medium text-primary underline-offset-4 hover:underline"
+              >
+                {draft.title || "Untitled position"}
+              </button>
+              {sourceReqId &&
+                (() => {
+                  const sourceReq = requisitions.find((r) => r.id === sourceReqId);
+                  if (!sourceReq?.justification) return null;
+                  return (
+                    <span className="ml-auto">
+                      <RequisitionNote req={sourceReq} label="View request note" />
+                    </span>
+                  );
+                })()}
             </div>
-            {sourceReqId &&
-              (() => {
-                const sourceReq = requisitions.find((r) => r.id === sourceReqId);
-                if (!sourceReq?.justification) return null;
-                return (
-                  <div className="rounded-md border border-primary/20 bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-                    <p className="mb-0.5 font-medium text-foreground">
-                      Justification from Core HCM ({sourceReq.id})
-                    </p>
-                    <p className="italic">“{sourceReq.justification}”</p>
-                  </div>
-                );
-              })()}
+
             <div className="grid gap-4 xl:grid-cols-[190px_minmax(0,1fr)_360px]">
               {/* Component palette */}
               <Card className="border-border/70">
@@ -1499,6 +1659,7 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
               </Card>
             </div>
           </div>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -1511,26 +1672,56 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Choose a department</DialogTitle>
+            <DialogTitle>Choose department and job position</DialogTitle>
             <DialogDescription>
-              Pick which department this job post is for — it seeds the builder with a blank,
-              customizable template.
+              Pick the department and the position this job post is for — it seeds the builder with a
+              blank, customizable template.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Department</Label>
-            <Select value={pendingDept} onValueChange={setPendingDept}>
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {departments.map((d) => (
-                  <SelectItem key={d.code} value={d.name}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Department</Label>
+              <Select
+                value={pendingDept}
+                onValueChange={(v) => {
+                  setPendingDept(v);
+                  setPendingPosition("");
+                }}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((d) => (
+                    <SelectItem key={d.code} value={d.name}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Job position</Label>
+              <Select value={pendingPosition} onValueChange={setPendingPosition}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="Select a position" />
+                </SelectTrigger>
+                <SelectContent>
+                  {positions
+                    .filter((p) => p.department === pendingDept)
+                    .map((p) => (
+                      <SelectItem key={p.id} value={p.title}>
+                        {p.title}
+                      </SelectItem>
+                    ))}
+                  {positions.filter((p) => p.department === pendingDept).length === 0 && (
+                    <div className="px-2 py-3 text-xs text-muted-foreground">
+                      No positions defined for this department.
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -1542,7 +1733,10 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
             >
               <X className="mr-2 h-4 w-4" /> Cancel
             </Button>
-            <Button onClick={() => startNewPost(pendingDept)}>
+            <Button
+              disabled={!pendingPosition}
+              onClick={() => startNewPost(pendingDept, pendingPosition)}
+            >
               <PencilRuler className="mr-2 h-4 w-4" /> Start job post
             </Button>
           </DialogFooter>

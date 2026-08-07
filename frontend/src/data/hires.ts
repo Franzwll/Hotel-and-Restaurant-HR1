@@ -59,6 +59,16 @@ export const hireStore = {
     pendingHire = p;
     emit();
   },
+  /** Atomically takes the pending hire (returns null if already consumed). */
+  consumePending: () => {
+    const p = pendingHire;
+    pendingHire = null;
+    if (p) emit();
+    return p;
+  },
+  /** True when a hire with the same name + position already exists. */
+  exists: (name: string, position: string) =>
+    hires.some((h) => h.name === name && h.position === position),
 };
 
 export function useHires() {

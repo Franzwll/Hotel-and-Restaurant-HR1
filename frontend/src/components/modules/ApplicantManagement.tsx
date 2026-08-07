@@ -104,13 +104,12 @@ const auditBadgeClass = (action: string) => {
   if (/Accepted|Completed/.test(action)) return "border-success/40 bg-success/10 text-success";
   if (/Rejected|Cancelled|No-Show/.test(action))
     return "border-destructive/40 bg-destructive/10 text-destructive";
-  if (/Booked|Scheduled|Started/.test(action)) return "border-primary/40 bg-primary/10 text-primary";
+  if (/Booked|Scheduled|Started/.test(action))
+    return "border-primary/40 bg-primary/10 text-primary";
   if (/Transferred|Status Change/.test(action))
     return "border-warning/40 bg-warning/10 text-warning";
   return "border-border bg-secondary text-secondary-foreground";
 };
-
-
 
 const statusChartColor: Record<ApplicantStatus, string> = {
   fit: "var(--color-success)",
@@ -291,12 +290,48 @@ const monthNames = [
 
 const yearOptions = Array.from({ length: 11 }, (_, i) => 2021 + i);
 
+/** Default interview slot configuration — 14 applicants per slot, 14 time slots, on-site. */
+const DEFAULT_SLOT_SETTINGS = {
+  capacityPerSlot: 14,
+  slotCount: 14,
+  startTime: "08:00",
+  intervalMinutes: 30,
+  allowWalkIn: true,
+  defaultMode: "On-site" as "On-site" | "Virtual",
+};
+
+/** Builds the day's time slots from a start time, interval and slot count. */
+const buildTimeSlots = (startTime: string, intervalMinutes: number, count: number) => {
+  const [h, m] = startTime.split(":").map(Number);
+  const base = (h ?? 8) * 60 + (m ?? 0);
+  return Array.from({ length: Math.max(1, count) }, (_, i) => {
+    const total = (base + i * Math.max(5, intervalMinutes)) % (24 * 60);
+    const hour24 = Math.floor(total / 60);
+    const minute = total % 60;
+    const suffix = hour24 >= 12 ? "PM" : "AM";
+    const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+    return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${suffix}`;
+  });
+};
+
+/** Triggers a client-side download of generated text content. */
+const downloadTextFile = (filename: string, content: string) => {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) {
   const navigate = useNavigate();
   const [rows, setRows] = useState<Applicant[]>(seedApplicants);
   const [tab, setTab] = useState("ranking");
   const [positionFilter, setPositionFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [review, setReview] = useState<Applicant | null>(null);
   const [evaluating, setEvaluating] = useState<Applicant | null>(null);
@@ -314,6 +349,11 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
   const [interviews, setInterviews] = useState(seedInterviews);
   const [assessments, setAssessments] = useState<AssessmentResult[]>(seedAssessments);
   const [assessmentFilter, setAssessmentFilter] = useState<"ready" | "completed" | "all">("all");
+  /** Pending accept/reject decision awaiting confirmation. */
+  const [assessDecision, setAssessDecision] = useState<{
+    r: AssessmentResult;
+    kind: "accept" | "reject";
+  } | null>(null);
   const [assessmentSearch, setAssessmentSearch] = useState("");
   const [assessmentDept, setAssessmentDept] = useState<string>("all");
   const [assessmentOutcome, setAssessmentOutcome] = useState<string>("all");
@@ -325,12 +365,24 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
   const [interviewSearch, setInterviewSearch] = useState("");
   const [interviewStatusFilter, setInterviewStatusFilter] = useState<string>("all");
   const [interviewModeFilter, setInterviewModeFilter] = useState<string>("all");
+  const [slotSettings, setSlotSettings] = useState(DEFAULT_SLOT_SETTINGS);
+  const [slotDialogOpen, setSlotDialogOpen] = useState(false);
+
+  /** Interview pending cancellation confirmation. */
+  const [cancelInterview, setCancelInterview] = useState<(typeof seedInterviews)[number] | null>(
+    null,
+  );
   const [schedule, setSchedule] = useState({
     applicant: "",
     date: "2026-08-03",
-    time: "09:00 AM",
-    mode: "On-site",
+    time: buildTimeSlots(
+      DEFAULT_SLOT_SETTINGS.startTime,
+      DEFAULT_SLOT_SETTINGS.intervalMinutes,
+      DEFAULT_SLOT_SETTINGS.slotCount,
+    )[0]!,
+    mode: DEFAULT_SLOT_SETTINGS.defaultMode as string,
     interviewer: interviewers[0]!.name,
+    walkIn: false,
   });
   const [scheduleDept, setScheduleDept] = useState<string>("all");
 
@@ -367,6 +419,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
   const [addStep, setAddStep] = useState<1 | 2 | 3>(1);
   const [addMethod, setAddMethod] = useState<"file" | "image">("file");
   const [addFileName, setAddFileName] = useState("");
+  const [addDept, setAddDept] = useState<string>(positions[0]!.department);
   const [addForm, setAddForm] = useState({
     name: "",
     email: "",
@@ -404,6 +457,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
   const filtered = rows.filter((a) => {
     if (positionFilter !== "all" && a.position !== positionFilter) return false;
     if (statusFilter !== "all" && a.status !== statusFilter) return false;
+    if (stageFilter !== "all" && a.stage !== stageFilter) return false;
     if (
       search &&
       !`${a.name} ${a.email} ${a.position}`.toLowerCase().includes(search.toLowerCase())
@@ -442,8 +496,22 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
       email: applicant?.email ?? "",
       phone: applicant?.phone ?? "",
     });
-    toast.success(`${r.name} accepted — creating their onboarding record`);
+    setAssessments((prev) => prev.filter((a) => a.applicantId !== r.applicantId));
+    toast.success(`${r.name} accepted — creating their pre-onboarding record`);
     navigate({ to: `/${role}/onboarding` });
+  };
+
+  /** Rejecting an assessment drops the row from the list. */
+  const rejectAssessment = (r: AssessmentResult) => {
+    setStage(r.applicantId, "Rejected");
+    addAudit({
+      actionType: "Assessment Rejected",
+      target: r.name,
+      module: "Applicant Management",
+      details: `Rejected after assessment (${r.total}%)`,
+    });
+    setAssessments((prev) => prev.filter((a) => a.applicantId !== r.applicantId));
+    toast.success(`${r.name} rejected after assessment`);
   };
 
   /** Accept → prefill the scheduler and jump to the Interview Scheduling tab. */
@@ -459,6 +527,19 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
   const confirmSchedule = () => {
     if (!schedule.applicant) {
       toast.error("Select an applicant first");
+      return;
+    }
+    const taken = interviews.filter(
+      (i) => i.date === schedule.date && i.time === schedule.time,
+    ).length;
+    if (taken >= slotSettings.capacityPerSlot) {
+      toast.error(
+        `That slot is full — ${slotSettings.capacityPerSlot} applicants already booked for ${schedule.time}.`,
+      );
+      return;
+    }
+    if (schedule.walkIn && !slotSettings.allowWalkIn) {
+      toast.error("Walk-in bookings are turned off in the slot settings.");
       return;
     }
     const src = rows.find((a) => a.name === schedule.applicant);
@@ -480,11 +561,93 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
       actionType: "Interview Scheduled",
       target: schedule.applicant,
       module: "Interview Scheduling",
-      details: `${schedule.mode} interview booked for ${schedule.date} · ${schedule.time} with ${schedule.interviewer}.`,
+      details: `${schedule.mode}${schedule.walkIn ? " walk-in" : ""} interview booked for ${schedule.date} · ${schedule.time} with ${schedule.interviewer}.`,
     });
     toast.success(`Interview confirmed for ${schedule.applicant}`, {
-      description: `${schedule.date} · ${schedule.time} · ${schedule.mode}`,
+      description: `${schedule.date} · ${schedule.time} · ${schedule.mode}${
+        schedule.walkIn ? " · Walk-in" : ""
+      }`,
     });
+  };
+
+  /** Downloads a printable interview evaluation form for an applicant. */
+  const downloadEvaluationForm = (a: Applicant) => {
+    const saved = assessments.find((x) => x.applicantId === a.id);
+    const scores = saved?.scores ?? evalScores;
+    const lines = [
+      "INTERVIEW EVALUATION FORM",
+      "==========================",
+      `Applicant   : ${a.name}`,
+      `Position    : ${a.position}`,
+      `Applicant ID: ${a.id}`,
+      `Date        : ${saved?.date ?? isoOf(new Date())}`,
+      "",
+      "CRITERIA (score / 5)",
+      ...assessmentCriteria.map((c) => `- ${c}: ${scores[c] ?? "____"} / 5`),
+      "",
+      `Total score : ${
+        saved?.total ??
+        Math.round(
+          (assessmentCriteria.reduce((t, c) => t + (scores[c] ?? 4), 0) /
+            (assessmentCriteria.length * 5)) *
+            100,
+        )
+      }%`,
+      `Outcome     : ${saved?.outcome ?? "Pending"}`,
+      "",
+      "Remarks:",
+      saved?.remarks ?? (evalRemarks || "________________________________________"),
+      "",
+      "Interviewer signature: ____________________    Date: ____________",
+    ];
+    downloadTextFile(`evaluation-form-${a.id}.txt`, lines.join("\n"));
+    toast.success("Evaluation form downloaded");
+  };
+
+  /** Downloads the AI resume screening result for an applicant. */
+  const downloadScreeningResult = (a: Applicant) => {
+    const lines = [
+      "APPLICANT RESUME SCREENING RESULT",
+      "=================================",
+      `Applicant : ${a.name}`,
+      `Email     : ${a.email}`,
+      `Phone     : ${a.phone}`,
+      `Position  : ${a.position} (${a.jobId})`,
+      `Applied   : ${a.appliedAt}`,
+      `Source    : ${a.source}`,
+      `Stage     : ${a.stage}`,
+      `Match     : ${a.score}% — ${statusMeta[a.status].label}`,
+      "",
+      "EXTRACTED DETAILS",
+      ...a.entities.map((e) => `- ${e.label}: ${e.value}`),
+      "",
+      "CRITERIA BREAKDOWN",
+      ...a.breakdown.map((b) => `- ${b.criterion}: ${b.score}%`),
+      "",
+      "FLAGS",
+      ...(a.flags.length ? a.flags.map((f) => `- ${f}`) : ["- None"]),
+      "",
+      "SUMMARY",
+      a.summary,
+    ];
+    downloadTextFile(`screening-result-${a.id}.txt`, lines.join("\n"));
+    toast.success("Screening result downloaded");
+  };
+
+  /** Cancels an interview after the user confirms in the modal. */
+
+  const performCancelInterview = () => {
+    const i = cancelInterview;
+    if (!i) return;
+    setInterviews((prev) => prev.filter((x) => x.id !== i.id));
+    addAudit({
+      actionType: "Interview Cancelled",
+      target: i.applicant,
+      module: "Interview Scheduling",
+      details: `Interview on ${i.date} · ${i.time} cancelled.`,
+    });
+    setCancelInterview(null);
+    toast(`Interview cancelled — ${i.applicant}`);
   };
 
   const reject = (a: Applicant) => {
@@ -506,14 +669,28 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
 
   const totalWeight = criteria.reduce((t, c) => t + (c.enabled ? c.weight : 0), 0);
 
+  /** Mock NER parse — fills the applicant fields straight from the "resume". */
   const runScreening = () => {
     const score = 62 + Math.floor(Math.random() * 34);
     const status: ApplicantStatus = score >= 85 ? "fit" : score >= 70 ? "other-role" : "credential";
+    const parsedName =
+      addForm.name ||
+      ["Maria Clara Santos", "Joaquin Delos Reyes", "Andrea Villanueva", "Rafael Lim"][
+        Math.floor(Math.random() * 4)
+      ]!;
+    const handle = parsedName.toLowerCase().replace(/[^a-z]+/g, ".");
+    setAddForm((f) => ({
+      ...f,
+      name: parsedName,
+      email: f.email || `${handle}@gmail.com`,
+      phone: f.phone || `+63 9${Math.floor(100000000 + Math.random() * 899999999)}`,
+      address: f.address || "Brgy. Poblacion, Makati City, Metro Manila",
+    }));
     setScreenResult({
       score,
       status,
       entities: [
-        { label: "PERSON", value: addForm.name || "Detected from document" },
+        { label: "PERSON", value: parsedName },
         { label: "SKILL", value: (keywordLibrary[addForm.position] ?? ["Guest Service"])[0]! },
         { label: "ORG", value: "Previous employer detected" },
         { label: "EDU", value: "Hospitality-related coursework" },
@@ -573,11 +750,15 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
     });
   }, [viewMonth]);
 
-  const slotsForSelected = suggestedSlots.find((s) => s.date === schedule.date)?.times ?? [
-    "09:00 AM",
-    "01:00 PM",
-    "03:30 PM",
-  ];
+  const slotsForSelected = useMemo(
+    () =>
+      buildTimeSlots(slotSettings.startTime, slotSettings.intervalMinutes, slotSettings.slotCount),
+    [slotSettings.startTime, slotSettings.intervalMinutes, slotSettings.slotCount],
+  );
+
+  /** Interviews already booked for a given date + time slot. */
+  const bookedInSlot = (date: string, time: string) =>
+    interviews.filter((i) => i.date === date && i.time === time).length;
 
   const readyToAssess = rows.filter(
     (a) => a.stage === "Interview Scheduled" && !assessments.some((x) => x.applicantId === a.id),
@@ -645,7 +826,6 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
           : "Interview not booked"
         : `Assessed ${row.r.date} — ${row.r.remarks}`,
   });
-
 
   const auditFiltered = auditLog
     .filter((e) => (auditActionFilter === "all" ? true : e.actionType === auditActionFilter))
@@ -784,35 +964,79 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   </Select>
                 </div>
 
-                <div className="mt-2 flex flex-col items-center">
-                  <div className="h-[280px] w-full max-w-md">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={distribution}
-                          dataKey="value"
-                          nameKey="name"
-                          innerRadius={58}
-                          outerRadius={92}
-                          paddingAngle={2}
-                          label={(e: { value?: number }) =>
-                            e.value && screenedTotal
-                              ? `${Math.round(((e.value ?? 0) / screenedTotal) * 100)}%`
-                              : ""
-                          }
-                          labelLine={false}
-                        >
-                          {distribution.map((d) => (
-                            <Cell key={d.key} fill={statusChartColor[d.key]} />
-                          ))}
-                        </Pie>
-                        <RTooltip contentStyle={tooltipStyle} />
-                        <Legend wrapperStyle={{ fontSize: 11 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-4 py-2">
+                  <div className="relative h-[260px] w-[260px] shrink-0">
+                    <PieChart width={260} height={260}>
+                      <Pie
+                        isAnimationActive={false}
+
+                        data={distribution}
+                        dataKey="value"
+                        nameKey="name"
+                        cx={130}
+                        cy={130}
+                        innerRadius={52}
+                        outerRadius={84}
+                        paddingAngle={2}
+                        labelLine={false}
+                        label={(props: {
+                          cx?: number;
+                          cy?: number;
+                          midAngle?: number;
+                          innerRadius?: number;
+                          outerRadius?: number;
+                          value?: number;
+                        }) => {
+                          const {
+                            cx = 0,
+                            cy = 0,
+                            midAngle = 0,
+                            innerRadius = 0,
+                            outerRadius = 0,
+                            value = 0,
+                          } = props;
+                          const pct = screenedTotal ? (value / screenedTotal) * 100 : 0;
+                          if (pct < 4) return null;
+                          const r = innerRadius + (outerRadius - innerRadius) / 2;
+                          const rad = -midAngle * (Math.PI / 180);
+                          return (
+                            <text
+                              x={cx + r * Math.cos(rad)}
+                              y={cy + r * Math.sin(rad)}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fill="#fff"
+                              fontSize={11}
+                              fontWeight={600}
+                            >
+                              {Math.round(pct)}%
+                            </text>
+                          );
+                        }}
+                      >
+                        {distribution.map((d) => (
+                          <Cell key={d.key} fill={statusChartColor[d.key]} />
+                        ))}
+                      </Pie>
+                      <RTooltip
+                        contentStyle={tooltipStyle}
+                        formatter={(value: number | string) => {
+                          const n = Number(value);
+                          const pct = screenedTotal ? Math.round((n / screenedTotal) * 100) : 0;
+                          return [`${n} (${pct}%)`, "Resumes"] as [string, string];
+                        }}
+                      />
+                    </PieChart>
+
+                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="font-display text-2xl font-semibold">{screenedTotal}</span>
+                      <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                        Resumes
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="mt-4 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="grid w-[15.5rem] max-w-full grid-cols-1 gap-2">
                     {distribution.map((d) => (
                       <div
                         key={d.key}
@@ -833,7 +1057,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
               </CardContent>
             </Card>
 
-            <Card className="flex flex-col overflow-hidden border-border/70 xl:max-h-[34rem]">
+            <Card className="flex flex-col overflow-hidden border-border/70 xl:max-h-[30rem]">
               <CardContent className="flex min-h-0 flex-1 flex-col p-6">
                 <h2 className="flex items-center gap-2 font-display text-2xl font-semibold">
                   <Trophy className="h-5 w-5 text-gold" /> Top 5 Candidates Today
@@ -841,16 +1065,17 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                 <p className="text-xs text-muted-foreground">
                   Highest ranked resumes from today&apos;s screening batch.
                 </p>
-                <ol className="mt-4 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+                <ol className="mt-4 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
                   {topFiveToday.map((a, i) => (
                     <li
                       key={a.id}
-                      className="flex flex-col gap-2 rounded-md border border-border p-3"
+                      className="flex flex-col gap-3 rounded-xl border border-border/80 bg-card p-5 shadow-sm transition-shadow hover:shadow-md"
                     >
-                      <div className="flex items-center gap-2">
+                      {/* Row 1: Rank + Avatar + Name/Position */}
+                      <div className="flex items-center gap-3">
                         <span
                           className={cn(
-                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-display text-xs font-semibold",
+                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-display text-xs font-semibold",
                             i === 0
                               ? "bg-gold text-gold-foreground"
                               : "bg-secondary text-secondary-foreground",
@@ -858,24 +1083,34 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                         >
                           {i + 1}
                         </span>
-                        <Avatar className="h-8 w-8 shrink-0">
-                          <AvatarFallback className="bg-secondary text-[0.65rem]">
+                        <Avatar className="h-12 w-12 shrink-0">
+                          <AvatarFallback className="bg-secondary text-sm font-medium">
                             {initials(a.name)}
                           </AvatarFallback>
                         </Avatar>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{a.name}</p>
-                          <p className="truncate text-xs text-muted-foreground">{a.position}</p>
+                          <p className="truncate text-base font-semibold">{a.name}</p>
+                          <p className="truncate text-sm text-muted-foreground">{a.position}</p>
                         </div>
                       </div>
+
+                      {/* Row 2: Badge (styled like the photo) + Score */}
                       <div className="flex items-center justify-between">
-                        <Badge variant="outline" className={statusMeta[a.status].className}>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            statusMeta[a.status].className,
+                            "rounded-full border-green-200 bg-green-100 px-3 py-1 text-xs font-semibold text-green-700 dark:border-green-800 dark:bg-green-900/40 dark:text-green-300",
+                          )}
+                        >
                           {statusMeta[a.status].label}
                         </Badge>
-                        <span className="font-display text-base font-semibold text-primary">
+                        <span className="font-display text-2xl font-bold text-primary">
                           {a.score}%
                         </span>
                       </div>
+
+                      {/* Review button — full width, matches photo */}
                       <Button
                         size="sm"
                         variant="outline"
@@ -934,6 +1169,27 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                       ))}
                     </SelectContent>
                   </Select>
+                  <Select value={stageFilter} onValueChange={setStageFilter}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All stages</SelectItem>
+                      {[
+                        "Screened",
+                        "Interview Scheduled",
+                        "Assessed",
+                        "Offer",
+                        "Hired",
+                        "Rejected",
+                      ].map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
                   <Button size="sm" onClick={() => setAddOpen(true)}>
                     <UserPlus className="mr-2 h-4 w-4" /> Add applicant
                   </Button>
@@ -1061,42 +1317,15 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                           {a.stage}
                         </TableCell>
                         <TableCell>
-                          <div className="flex justify-end gap-1">
+                          <div className="flex justify-end">
                             <Button
-                              size="icon"
+                              size="sm"
                               variant="outline"
-                              className="h-7 w-7"
-                              title="Review resume screening result"
+                              className="h-7 cursor-pointer"
+                              title="Review screening result and decide"
                               onClick={() => setReview(a)}
                             >
-                              <FileText className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              className="h-7 w-7"
-                              title="Accept and go to interview scheduling"
-                              onClick={() => acceptAndSchedule(a)}
-                            >
-                              <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              className="h-7 w-7"
-                              title="Refer to another position"
-                              onClick={() => openRefer(a)}
-                            >
-                              <Repeat2 className="h-3.5 w-3.5 text-warning" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              className="h-7 w-7"
-                              title="Reject applicant"
-                              onClick={() => reject(a)}
-                            >
-                              <XCircle className="h-3.5 w-3.5 text-destructive" />
+                              <FileText className="mr-1.5 h-3.5 w-3.5" /> Review
                             </Button>
                           </div>
                         </TableCell>
@@ -1104,15 +1333,15 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     ))}
                   </TableBody>
                 </Table>
-              <TablePagination
-                page={applicantPage.page}
-                pageCount={applicantPage.pageCount}
-                from={applicantPage.from}
-                to={applicantPage.to}
-                total={applicantPage.total}
-                label="applicants"
-                onPageChange={applicantPage.setPage}
-              />
+                <TablePagination
+                  page={applicantPage.page}
+                  pageCount={applicantPage.pageCount}
+                  from={applicantPage.from}
+                  to={applicantPage.to}
+                  total={applicantPage.total}
+                  label="applicants"
+                  onPageChange={applicantPage.setPage}
+                />
               </div>
             </CardContent>
           </Card>
@@ -1120,10 +1349,11 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
 
         {/* SCHEDULING */}
         <TabsContent value="scheduling" className="mt-4 space-y-6">
-          <div className="grid items-stretch gap-6 xl:grid-cols-2">
+          <div className="grid gap-6 xl:grid-cols-2">
             {/* ── Interview Calendar ─────────────────────────────── */}
             <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
-              <CardContent className="flex flex-1 flex-col p-6">
+              <CardContent className="flex flex-1 flex-col p-5">
+
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
                   <div className="flex min-w-0 items-start gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -1175,7 +1405,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   <PopoverTrigger asChild>
                     <button
                       type="button"
-                      className="mt-5 inline-flex items-center gap-2 rounded-lg px-2 py-1 font-display text-xl font-semibold transition-colors hover:bg-muted"
+                      className="mt-4 inline-flex items-center gap-2 self-start rounded-lg px-2 py-1 font-display text-lg font-semibold transition-colors hover:bg-muted"
                     >
                       {viewMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
                       <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -1225,15 +1455,15 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   </PopoverContent>
                 </Popover>
 
-                <div className="mt-3 grid grid-cols-7 text-center text-[0.65rem] font-semibold tracking-wide text-muted-foreground">
+                <div className="mt-2 grid grid-cols-7 text-center text-[0.65rem] font-semibold tracking-wide text-muted-foreground">
                   {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((d) => (
-                    <span key={d} className="py-2">
+                    <span key={d} className="py-1.5">
                       {d}
                     </span>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-7 overflow-hidden rounded-lg border border-border">
+                <div className="grid flex-1 grid-cols-7 grid-rows-6 overflow-hidden rounded-lg border border-border">
                   {monthCells.map((cell) => {
                     const iso = isoOf(cell.date);
                     const count = interviews.filter((i) => i.date === iso).length;
@@ -1249,7 +1479,8 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                           setSchedule((s) => ({ ...s, date: iso }));
                         }}
                         className={cn(
-                          "relative h-[3.1rem] border-b border-r border-border/70 text-sm transition-colors last:border-r-0",
+                          "relative min-h-[2.9rem] border-b border-r border-border/70 text-sm transition-colors last:border-r-0",
+
                           !cell.inMonth && "bg-muted/20 text-muted-foreground/50",
                           cell.inMonth && !selected && "hover:bg-muted/50",
                           count > 0 && !selected && "bg-primary/5 font-semibold text-primary",
@@ -1278,7 +1509,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   })}
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <span className="h-2 w-2 rounded-full bg-primary" /> Booked
                   </span>
@@ -1290,7 +1521,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   </span>
                 </div>
 
-                <div className="mt-5">
+                <div className="mt-4 flex flex-none flex-col">
                   <div className="flex items-center gap-2">
                     <p className="font-display text-base font-semibold">
                       Interviews on{" "}
@@ -1309,44 +1540,50 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     </Badge>
                   </div>
 
-                  <div className="mt-3 space-y-2">
-                    {interviews
-                      .filter((i) => i.date === schedule.date)
-                      .map((i) => (
-                        <button
-                          key={i.id}
-                          type="button"
-                          onClick={() => toast(`Viewing interview — ${i.applicant}`)}
-                          className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border/70 bg-muted/20 p-2.5 text-left transition-colors hover:bg-muted/40"
-                        >
-                          <span className="shrink-0 rounded-md bg-card px-2.5 py-1.5 text-xs font-semibold text-primary shadow-sm">
-                            {i.time}
-                          </span>
-                          <span className="grid min-w-0 gap-1 sm:grid-cols-2">
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm font-medium">
-                                {i.applicant}
+                  <div className="relative mt-2 h-[10.5rem]">
+                    <div className="absolute inset-0 space-y-2 overflow-y-auto pr-1.5">
+
+                      {interviews
+                        .filter((i) => i.date === schedule.date)
+                        .map((i) => (
+                          <button
+                            key={i.id}
+                            type="button"
+                            onClick={() => toast(`Viewing interview — ${i.applicant}`)}
+                            className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border/70 bg-muted/20 p-2.5 text-left transition-colors hover:bg-muted/40"
+                          >
+                            <span className="shrink-0 rounded-md bg-card px-2.5 py-1.5 text-xs font-semibold text-primary shadow-sm">
+                              {i.time}
+                            </span>
+                            <span className="grid min-w-0 gap-1 sm:grid-cols-2">
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-medium">
+                                  {i.applicant}
+                                </span>
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {i.position}
+                                </span>
                               </span>
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {i.position}
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-medium">
+                                  {i.interviewer}
+                                </span>
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {i.mode}
+                                </span>
                               </span>
                             </span>
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm font-medium">
-                                {i.interviewer}
-                              </span>
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {i.mode}
-                              </span>
-                            </span>
-                          </span>
-                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        </button>
-                      ))}
-                    {interviews.filter((i) => i.date === schedule.date).length === 0 && (
-                      <p className="rounded-lg border border-dashed border-border p-5 text-center text-xs text-muted-foreground">
-                        No interviews booked — the whole day is free.
-                      </p>
+                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          </button>
+                        ))}
+                      {interviews.filter((i) => i.date === schedule.date).length === 0 && (
+                        <p className="rounded-lg border border-dashed border-border p-5 text-center text-xs text-muted-foreground">
+                          No interviews booked — the whole day is free.
+                        </p>
+                      )}
+                    </div>
+                    {interviews.filter((i) => i.date === schedule.date).length > 3 && (
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 rounded-b-lg bg-gradient-to-t from-card to-transparent" />
                     )}
                   </div>
                 </div>
@@ -1355,7 +1592,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
 
             {/* ── Book an Interview ──────────────────────────────── */}
             <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
-              <CardContent className="flex flex-1 flex-col p-6">
+              <CardContent className="flex flex-1 flex-col p-5">
                 <div className="flex items-start gap-3">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                     <CalendarClock className="h-5 w-5" />
@@ -1368,7 +1605,170 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   </div>
                 </div>
 
-                <div className="mt-6 flex-1 space-y-6">
+                {(() => {
+                  const steps = [
+                    { label: "Applicant", done: Boolean(schedule.applicant) },
+                    { label: "Date", done: Boolean(schedule.date) },
+                    { label: "Time", done: Boolean(schedule.time) },
+                    { label: "Details", done: Boolean(schedule.mode && schedule.interviewer) },
+                  ];
+                  const done = steps.filter((s) => s.done).length;
+                  return (
+                    <div className="mt-4 rounded-lg border border-border/70 bg-muted/20 p-2.5">
+                      <div className="flex items-center justify-between text-[0.7rem] font-medium text-muted-foreground">
+                        <span>Booking progress</span>
+                        <span>
+                          {done} of {steps.length} complete
+                        </span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-4 gap-2">
+                        {steps.map((s, idx) => (
+                          <div key={s.label} className="min-w-0">
+                            <div
+                              className={cn(
+                                "h-1.5 rounded-full transition-colors duration-300",
+                                s.done ? "bg-primary" : "bg-border",
+                              )}
+                            />
+                            <p
+                              className={cn(
+                                "mt-1.5 truncate text-[0.7rem] transition-colors",
+                                s.done ? "font-medium text-primary" : "text-muted-foreground",
+                              )}
+                            >
+                              {idx + 1}. {s.label}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="mt-4 flex-1 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Slot settings
+                      </p>
+                      <p className="text-[0.7rem] text-muted-foreground">
+                        {slotSettings.slotCount} slots · {slotSettings.capacityPerSlot} applicants
+                        each · {slotSettings.intervalMinutes} min ·{" "}
+                        {slotSettings.allowWalkIn ? "walk-in allowed" : "no walk-ins"}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => setSlotDialogOpen(true)}
+                    >
+                      <Settings2 className="h-4 w-4" /> Slot settings
+                    </Button>
+                  </div>
+
+                  <Dialog open={slotDialogOpen} onOpenChange={setSlotDialogOpen}>
+                    <DialogContent className="sm:max-w-lg">
+                      <DialogHeader>
+                        <DialogTitle className="font-display text-2xl">Slot settings</DialogTitle>
+                        <DialogDescription>
+                          Set how many time slots the day has, how many applicants each slot
+                          accepts, and whether walk-ins are allowed.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Applicants per time slot</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={slotSettings.capacityPerSlot}
+                              onChange={(e) =>
+                                setSlotSettings((p) => ({
+                                  ...p,
+                                  capacityPerSlot: Math.max(1, Number(e.target.value) || 1),
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Number of time slots</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={48}
+                              value={slotSettings.slotCount}
+                              onChange={(e) =>
+                                setSlotSettings((p) => ({
+                                  ...p,
+                                  slotCount: Math.min(48, Math.max(1, Number(e.target.value) || 1)),
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">First slot starts</Label>
+                            <Input
+                              type="time"
+                              value={slotSettings.startTime}
+                              onChange={(e) =>
+                                setSlotSettings((p) => ({
+                                  ...p,
+                                  startTime: e.target.value || "08:00",
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Slot length (minutes)</Label>
+                            <Select
+                              value={String(slotSettings.intervalMinutes)}
+                              onValueChange={(v) =>
+                                setSlotSettings((p) => ({ ...p, intervalMinutes: Number(v) }))
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {[15, 20, 30, 45, 60].map((m) => (
+                                  <SelectItem key={m} value={String(m)}>
+                                    {m} min
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+                          <div>
+                            <p className="text-xs font-medium">Accept walk-in applicants</p>
+                            <p className="text-[0.7rem] text-muted-foreground">
+                              Allow booking walk-ins into these slots.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={slotSettings.allowWalkIn}
+                            onCheckedChange={(v) =>
+                              setSlotSettings((p) => ({ ...p, allowWalkIn: v }))
+                            }
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter className="gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => setSlotSettings(DEFAULT_SLOT_SETTINGS)}
+                        >
+                          Reset defaults
+                        </Button>
+                        <Button onClick={() => setSlotDialogOpen(false)}>Done</Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+
                   <div className="space-y-2">
                     <Label className="text-sm">Filter by Department</Label>
                     <Select
@@ -1426,12 +1826,19 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     <div className="flex flex-wrap gap-2">
                       {suggestedSlots.map((s) => {
                         const active = schedule.date === s.date;
+                        const booked = interviews.filter((i) => i.date === s.date).length;
+                        const dayCapacity =
+                          slotSettings.slotCount * slotSettings.capacityPerSlot - booked;
                         return (
                           <button
                             key={s.date}
                             type="button"
                             onClick={() => {
-                              setSchedule((p) => ({ ...p, date: s.date, time: s.times[0]! }));
+                              setSchedule((p) => ({
+                                ...p,
+                                date: s.date,
+                                time: slotsForSelected[0]!,
+                              }));
                               const d = new Date(`${s.date}T00:00:00`);
                               setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
                             }}
@@ -1448,7 +1855,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                               year: "numeric",
                             })}
                             <span className="ml-1 font-normal text-muted-foreground">
-                              ({s.times.length} slots)
+                              ({dayCapacity} open)
                             </span>
                           </button>
                         );
@@ -1457,33 +1864,51 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   </div>
 
                   <div className="space-y-2">
-                    <Label className="text-sm">
-                      <span className="text-primary">3.</span> Select Time Slot
-                    </Label>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Label className="text-sm">
+                        <span className="text-primary">3.</span> Select Time Slot
+                      </Label>
+                      <span className="text-[0.7rem] text-muted-foreground">
+                        {slotSettings.slotCount} slots · {slotSettings.capacityPerSlot} applicants
+                        each
+                        {slotSettings.allowWalkIn ? " · walk-in allowed" : ""}
+                      </span>
+                    </div>
+                    <div className="flex max-h-[168px] flex-wrap gap-2 overflow-y-auto rounded-lg border border-border/70 bg-muted/15 p-2">
                       {slotsForSelected.map((t) => {
-                        const taken = interviews.some(
-                          (i) => i.date === schedule.date && i.time === t,
-                        );
+                        const used = bookedInSlot(schedule.date, t);
+                        const full = used >= slotSettings.capacityPerSlot;
                         return (
                           <button
                             key={t}
                             type="button"
-                            disabled={taken}
+                            disabled={full}
                             onClick={() => setSchedule((p) => ({ ...p, time: t }))}
                             className={cn(
                               "rounded-full border px-4 py-2 text-xs font-medium transition-colors",
-                              taken && "cursor-not-allowed opacity-40 line-through",
-                              schedule.time === t && !taken
+                              full && "cursor-not-allowed opacity-40 line-through",
+                              schedule.time === t && !full
                                 ? "border-primary bg-primary/10 text-primary"
                                 : "border-border hover:border-primary/50",
                             )}
                           >
                             {t}
+                            <span className="ml-1 font-normal text-muted-foreground">
+                              ({slotSettings.capacityPerSlot - used} left)
+                            </span>
                           </button>
                         );
                       })}
                     </div>
+                    {slotSettings.allowWalkIn && (
+                      <div className="mt-2 flex items-center justify-between rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+                        <span className="text-xs">Walk-in applicant</span>
+                        <Switch
+                          checked={schedule.walkIn}
+                          onCheckedChange={(v) => setSchedule((p) => ({ ...p, walkIn: v }))}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -1537,10 +1962,30 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                           ? "Meeting link: meet.oxfordsuites.ph/interview-room"
                           : "Location: Oxford Suites Makati, HR Office, 3rd Floor"}
                       </p>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">
+                          {schedule.applicant || "No applicant selected"}
+                        </span>
+                        {schedule.date && schedule.time
+                          ? ` · ${new Date(`${schedule.date}T00:00:00`).toLocaleDateString(
+                              "en-US",
+                              {
+                                month: "short",
+                                day: "numeric",
+                              },
+                            )} at ${schedule.time}`
+                          : " · pick a date and time"}
+                        {schedule.interviewer ? ` · ${schedule.interviewer}` : ""}
+                      </p>
                     </div>
                   </div>
 
-                  <Button className="w-full" size="lg" onClick={confirmSchedule}>
+                  <Button
+                    className="w-full"
+                    size="lg"
+                    disabled={!schedule.applicant || !schedule.date || !schedule.time}
+                    onClick={confirmSchedule}
+                  >
                     <Mail className="mr-2 h-4 w-4" /> Confirm &amp; Send Invitation
                   </Button>
                 </div>
@@ -1700,18 +2145,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                                 <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
                                 {i.status === "Completed" ? "Reopen" : "Mark completed"}
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setInterviews((prev) => prev.filter((x) => x.id !== i.id));
-                                  addAudit({
-                                    actionType: "Interview Cancelled",
-                                    target: i.applicant,
-                                    module: "Interview Scheduling",
-                                    details: `Interview on ${i.date} · ${i.time} cancelled.`,
-                                  });
-                                  toast(`Interview cancelled — ${i.applicant}`);
-                                }}
-                              >
+                              <DropdownMenuItem onClick={() => setCancelInterview(i)}>
                                 <XCircle className="mr-2 h-3.5 w-3.5 text-destructive" /> Cancel
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -1721,15 +2155,15 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     ))}
                   </TableBody>
                 </Table>
-              <TablePagination
-                page={interviewPage.page}
-                pageCount={interviewPage.pageCount}
-                from={interviewPage.from}
-                to={interviewPage.to}
-                total={interviewPage.total}
-                label="interviews"
-                onPageChange={interviewPage.setPage}
-              />
+                <TablePagination
+                  page={interviewPage.page}
+                  pageCount={interviewPage.pageCount}
+                  from={interviewPage.from}
+                  to={interviewPage.to}
+                  total={interviewPage.total}
+                  label="interviews"
+                  onPageChange={interviewPage.setPage}
+                />
               </div>
             </CardContent>
           </Card>
@@ -1801,22 +2235,46 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <SortHead sortKey="name" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                      <SortHead
+                        sortKey="name"
+                        sort={assessmentSort.sort}
+                        onSort={assessmentSort.toggle}
+                      >
                         Candidate
                       </SortHead>
-                      <SortHead sortKey="position" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                      <SortHead
+                        sortKey="position"
+                        sort={assessmentSort.sort}
+                        onSort={assessmentSort.toggle}
+                      >
                         Position
                       </SortHead>
-                      <SortHead sortKey="department" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                      <SortHead
+                        sortKey="department"
+                        sort={assessmentSort.sort}
+                        onSort={assessmentSort.toggle}
+                      >
                         Department
                       </SortHead>
-                      <SortHead sortKey="score" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                      <SortHead
+                        sortKey="score"
+                        sort={assessmentSort.sort}
+                        onSort={assessmentSort.toggle}
+                      >
                         Score
                       </SortHead>
-                      <SortHead sortKey="status" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                      <SortHead
+                        sortKey="status"
+                        sort={assessmentSort.sort}
+                        onSort={assessmentSort.toggle}
+                      >
                         Status
                       </SortHead>
-                      <SortHead sortKey="details" sort={assessmentSort.sort} onSort={assessmentSort.toggle}>
+                      <SortHead
+                        sortKey="details"
+                        sort={assessmentSort.sort}
+                        onSort={assessmentSort.toggle}
+                      >
                         Details
                       </SortHead>
                       <TableHead className="text-right">Action</TableHead>
@@ -1828,7 +2286,9 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                         <TableRow key={`ready-${row.a.id}`}>
                           <TableCell className="text-sm font-medium">{row.a.name}</TableCell>
                           <TableCell className="text-sm">{row.a.position}</TableCell>
-                          <TableCell className="text-sm">{deptForPosition(row.a.position)}</TableCell>
+                          <TableCell className="text-sm">
+                            {deptForPosition(row.a.position)}
+                          </TableCell>
                           <TableCell>{row.a.score}%</TableCell>
                           <TableCell>
                             <Badge
@@ -1870,7 +2330,9 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                         <TableRow key={`done-${row.r.applicantId}`}>
                           <TableCell className="text-sm font-medium">{row.r.name}</TableCell>
                           <TableCell className="text-sm">{row.r.position}</TableCell>
-                          <TableCell className="text-sm">{deptForPosition(row.r.position)}</TableCell>
+                          <TableCell className="text-sm">
+                            {deptForPosition(row.r.position)}
+                          </TableCell>
                           <TableCell>
                             <span className="font-display text-lg font-semibold text-primary">
                               {row.r.total}%
@@ -1898,23 +2360,18 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
-                              <Button size="sm" onClick={() => acceptAssessment(row.r)}>
+                              <Button
+                                size="sm"
+                                className="cursor-pointer"
+                                onClick={() => setAssessDecision({ r: row.r, kind: "accept" })}
+                              >
                                 <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Accept
                               </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                onClick={() => {
-                                  setStage(row.r.applicantId, "Rejected");
-                                  addAudit({
-                                    actionType: "Assessment Rejected",
-                                    target: row.r.name,
-                                    module: "Applicant Management",
-                                    details: `Rejected after assessment (${row.r.total}%)`,
-                                  });
-                                  toast.success(`${row.r.name} rejected after assessment`);
-                                }}
+                                className="cursor-pointer border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                onClick={() => setAssessDecision({ r: row.r, kind: "reject" })}
                               >
                                 <XCircle className="mr-1.5 h-3.5 w-3.5" /> Reject
                               </Button>
@@ -1931,17 +2388,16 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                       </TableRow>
                     )}
                   </TableBody>
-
                 </Table>
-              <TablePagination
-                page={assessmentPage.page}
-                pageCount={assessmentPage.pageCount}
-                from={assessmentPage.from}
-                to={assessmentPage.to}
-                total={assessmentPage.total}
-                label="assessments"
-                onPageChange={assessmentPage.setPage}
-              />
+                <TablePagination
+                  page={assessmentPage.page}
+                  pageCount={assessmentPage.pageCount}
+                  from={assessmentPage.from}
+                  to={assessmentPage.to}
+                  total={assessmentPage.total}
+                  label="assessments"
+                  onPageChange={assessmentPage.setPage}
+                />
               </div>
             </CardContent>
           </Card>
@@ -1996,7 +2452,6 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                           {d.name}
                         </SelectItem>
                       ))}
-
                     </SelectContent>
                   </Select>
                   <Select value={auditActorFilter} onValueChange={setAuditActorFilter}>
@@ -2120,25 +2575,22 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     )}
                   </TableBody>
                 </Table>
-              <TablePagination
-                page={auditPage.page}
-                pageCount={auditPage.pageCount}
-                from={auditPage.from}
-                to={auditPage.to}
-                total={auditPage.total}
-                label="log entries"
-                onPageChange={auditPage.setPage}
-              />
-              </div>
+                <TablePagination
+                  page={auditPage.page}
+                  pageCount={auditPage.pageCount}
+                  from={auditPage.from}
+                  to={auditPage.to}
+                  total={auditPage.total}
+                  label="log entries"
+                  hideRange
 
-              <p className="mt-3 text-xs text-muted-foreground">
-                Showing {auditSort.sorted.length} of {auditLog.length} recorded activities.
-              </p>
+                  onPageChange={auditPage.setPage}
+                />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
-
 
       {/* REPORTS DIALOG */}
       <Dialog open={reportsOpen} onOpenChange={setReportsOpen}>
@@ -2342,6 +2794,60 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
       </Dialog>
 
       {/* REVIEW DIALOG — resume screening result */}
+      {/* Assessment decision confirmation */}
+      <Dialog open={!!assessDecision} onOpenChange={(o) => !o && setAssessDecision(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {assessDecision?.kind === "accept" ? "Accept applicant?" : "Reject applicant?"}
+            </DialogTitle>
+            <DialogDescription>
+              {assessDecision?.kind === "accept"
+                ? `${assessDecision?.r.name} will be removed from the assessment list and handed to New Hire Onboarding as pre-onboarding. You'll be taken there now.`
+                : `${assessDecision?.r.name} will be marked rejected and removed from the assessment list.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssessDecision(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant={assessDecision?.kind === "reject" ? "destructive" : "default"}
+              onClick={() => {
+                if (!assessDecision) return;
+                if (assessDecision.kind === "accept") acceptAssessment(assessDecision.r);
+                else rejectAssessment(assessDecision.r);
+                setAssessDecision(null);
+              }}
+            >
+              {assessDecision?.kind === "accept" ? "Yes, continue" : "Yes, reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Interview cancellation confirmation */}
+      <Dialog open={!!cancelInterview} onOpenChange={(o) => !o && setCancelInterview(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel this interview?</DialogTitle>
+            <DialogDescription>
+              {cancelInterview
+                ? `${cancelInterview.applicant}'s interview on ${cancelInterview.date} · ${cancelInterview.time} will be removed from the schedule list.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelInterview(null)}>
+              Keep interview
+            </Button>
+            <Button variant="destructive" onClick={performCancelInterview}>
+              Yes, cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!review} onOpenChange={(o) => !o && setReview(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
           {review && (
@@ -2742,7 +3248,18 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   />
                 </div>
               </div>
-              <DialogFooter>
+              <DialogFooter className="flex-col gap-2 sm:flex-row">
+                <Button
+                  variant="outline"
+                  onClick={() => downloadEvaluationForm(evaluating)}
+                  className="sm:mr-auto"
+                >
+                  <Download className="mr-2 h-4 w-4" /> Evaluation form
+                </Button>
+                <Button variant="outline" onClick={() => downloadScreeningResult(evaluating)}>
+                  <Download className="mr-2 h-4 w-4" /> Screening result
+                </Button>
+
                 <Button
                   onClick={() => {
                     const total = Math.round(
@@ -2850,6 +3367,29 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
           {addStep === 2 && (
             <div className="space-y-4">
               <div className="space-y-2">
+                <Label>Department</Label>
+                <Select
+                  value={addDept}
+                  onValueChange={(v) => {
+                    setAddDept(v);
+                    const first = positions.find((p) => p.department === v);
+                    if (first) setAddForm((f) => ({ ...f, position: first.title }));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[...new Set(positions.map((p) => p.department))].map((d) => (
+                      <SelectItem key={d} value={d}>
+                        {d}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label>Applying for</Label>
                 <Select
                   value={addForm.position}
@@ -2859,11 +3399,13 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {positions.map((p) => (
-                      <SelectItem key={p.id} value={p.title}>
-                        {p.title}
-                      </SelectItem>
-                    ))}
+                    {positions
+                      .filter((p) => p.department === addDept)
+                      .map((p) => (
+                        <SelectItem key={p.id} value={p.title}>
+                          {p.title}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -2938,6 +3480,18 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                   ))}
                 </div>
               </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="cursor-pointer"
+                onClick={() => {
+                  toast("Re-running resume analysis…");
+                  runScreening();
+                }}
+              >
+                <ScanLine className="mr-2 h-4 w-4" /> Retry analysis
+              </Button>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">

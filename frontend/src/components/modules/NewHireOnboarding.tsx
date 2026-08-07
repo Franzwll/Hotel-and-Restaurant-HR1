@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Circle, Pencil, Search, UserPlus, Users, X } from "lucide-react";
+import { CheckCircle2, Circle, Eye, Pencil, Save, Search, UserPlus, Users, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/portal/PageHeader";
@@ -103,6 +103,7 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
   const [selectedId, setSelectedId] = useState<string | null>(seedHires[0]?.id ?? null);
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  
   const [editSnapshot, setEditSnapshot] = useState<{ item: string; done: boolean }[] | null>(null);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState<string>("all");
@@ -116,6 +117,8 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
   });
   /** True when the modal was opened from an accepted applicant — name is fixed. */
   const [nameLocked, setNameLocked] = useState(false);
+  /** Set when the modal is completing details for an existing hire entering probation. */
+  const [completingId, setCompletingId] = useState<string | null>(null);
 
   /** Opens a clean Add New Hire modal: nothing pre-set except today's start date. */
   const openAddHire = () => {
@@ -128,24 +131,38 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
       phone: "",
     });
     setNameLocked(false);
+    setCompletingId(null);
     setAddOpen(true);
   };
 
-  /** An accepted applicant arrives here with a pre-filled Add New Hire modal. */
+  /**
+   * An accepted applicant is filed straight into Pre-onboarding — no modal.
+   * The Add New Hire modal only appears later, when the hire is advanced to Probationary.
+   */
   useEffect(() => {
     if (!pending) return;
-    setForm({
-      name: pending.name,
-      position: pending.position,
-      department: pending.department,
+    const intake = hireStore.consumePending();
+    if (!intake) return;
+    if (hireStore.exists(intake.name, intake.position)) return;
+    const id = `NH-${String(hireStore.getHires().length + 1).padStart(2, "0")}`;
+    hireStore.add({
+      id,
+      name: intake.name,
+      position: intake.position,
+      department: intake.department,
+      stage: "Pre-onboarding",
       startDate: todayIso,
-      email: pending.email,
-      phone: pending.phone,
+      initials: initialsOf(intake.name),
+      email: intake.email,
+      phone: intake.phone,
+      checklist: defaultChecklist.map((item) => ({ item, done: false })),
     });
-    setNameLocked(true);
-    setAddOpen(true);
-    hireStore.setPending(null);
+    setSelectedId(id);
+    setStage("Pre-onboarding");
+    setShowAllStages(false);
+    toast.success(`${intake.name} filed under Pre-onboarding`);
   }, [pending]);
+
 
   const selected = hires.find((h) => h.id === selectedId) ?? null;
 
@@ -155,21 +172,8 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
     setHires((prev) =>
       prev.map((h) => {
         if (h.id !== hireId) return h;
-        const checklist = h.checklist.map((c) => (c.item === item ? { ...c, done: !c.done } : c));
-        const complete = checklist.every((c) => c.done);
-        const idx = stages.indexOf(h.stage);
-        if (complete && idx < stages.length - 1) {
-          const next = stages[idx + 1]!;
-          // Auto-promote: requirements fully met, move to the destination stage.
-          setTimeout(() => {
-            toast.success(`${h.name} completed all requirements — moved to ${next}`);
-            setStage(next);
-            setShowAllStages(false);
-          }, 0);
-          // A new stage starts from zero — issue that stage's own checklist.
-          return { ...h, checklist: freshChecklist(next), stage: next };
-        }
-        return { ...h, checklist };
+        // No auto-promotion — the stage only changes via "Advance stage".
+        return { ...h, checklist: h.checklist.map((c) => (c.item === item ? { ...c, done: !c.done } : c)) };
       }),
     );
   };
@@ -193,7 +197,15 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
   const saveEditChecklist = () => {
     setEditingId(null);
     setEditSnapshot(null);
+    toast.success("Checklist saved");
   };
+
+  /** Closing the checklist card also drops out of edit mode (reverting changes). */
+  const closeChecklistPanel = () => {
+    cancelEditChecklist();
+    setSelectedId(null);
+  };
+
 
   const advance = (hire: NewHire) => {
     const idx = stages.indexOf(hire.stage);
@@ -202,13 +214,39 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
       return;
     }
     const next = stages[idx + 1]!;
+    setEditingId(null);
+    setEditSnapshot(null);
+
+    // Moving into Probationary is confirmed through the Add New Hire modal —
+    // the hire stays in Pre-onboarding until that modal is saved.
+    if (next === "Probationary") {
+      setForm({
+        name: hire.name,
+        position: hire.position,
+        department: hire.department,
+        startDate: hire.startDate,
+        email: hire.email ?? "",
+        phone: hire.phone ?? "",
+      });
+      setNameLocked(true);
+      setCompletingId(hire.id);
+      setSelectedId(hire.id);
+      setAddOpen(true);
+      return;
+    }
+
     setHires((prev) =>
       prev.map((h) =>
         h.id === hire.id ? { ...h, stage: next, checklist: freshChecklist(next) } : h,
       ),
     );
+    setStage(next);
+    setShowAllStages(false);
+    setSelectedId(hire.id);
     toast.success(`${hire.name} moved to ${next}`);
   };
+
+
 
   const progress = (h: NewHire) =>
     Math.round((h.checklist.filter((c) => c.done).length / h.checklist.length) * 100);
@@ -245,11 +283,58 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
     setSelectedId(firstInStage?.id ?? null);
   };
 
+  const resetHireForm = () => {
+    setAddOpen(false);
+    setNameLocked(false);
+    setCompletingId(null);
+    setForm({
+      name: "",
+      position: "",
+      department: "",
+      startDate: todayIso,
+      email: "",
+      phone: "",
+    });
+  };
+
   const addHire = () => {
     if (!form.name || !form.position || !form.department || !form.startDate || !form.email) {
       toast.error("Name, position, department, email and start date are required.");
       return;
     }
+
+    // Completing an existing hire's record as they enter probation:
+    // saving here is what promotes them and creates their portal account.
+    if (completingId) {
+      const id = completingId;
+      setHires((prev) =>
+        prev.map((h) =>
+          h.id === id
+            ? {
+                ...h,
+                stage: "Probationary",
+                checklist: freshChecklist("Probationary"),
+                position: form.position,
+                department: form.department,
+                startDate: form.startDate,
+                email: form.email,
+                phone: form.phone,
+              }
+            : h,
+        ),
+      );
+      setStage("Probationary");
+      setShowAllStages(false);
+      setSelectedId(id);
+      const name = form.name;
+      resetHireForm();
+      toast.success(
+        `${name} moved to Probationary — portal account created (default password ${DEFAULT_ACCOUNT_PASSWORD})`,
+      );
+      return;
+    }
+
+
     const id = `NH-${String(hires.length + 1).padStart(2, "0")}`;
     hireStore.add({
       id,
@@ -267,18 +352,11 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
     setSelectedId(id);
     setStage("Pre-onboarding");
     setShowAllStages(false);
-    setAddOpen(false);
-    setNameLocked(false);
-    setForm({
-      name: "",
-      position: "",
-      department: "",
-      startDate: todayIso,
-      email: "",
-      phone: "",
-    });
-    toast.success(`${form.name} added to pre-onboarding and Employee Records`);
+    const name = form.name;
+    resetHireForm();
+    toast.success(`${name} added to pre-onboarding and Employee Records`);
   };
+
 
   return (
     <div>
@@ -316,36 +394,44 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
           </p>
 
           <div className="relative mt-8 px-2">
-            <div className="absolute left-[8%] right-[8%] top-4 h-0.5 bg-border" />
+            {/* Decorative rails — not interactive */}
             <div
-              className="absolute left-[8%] top-4 h-0.5 bg-primary transition-all"
+              aria-hidden
+              className="pointer-events-none absolute left-[8%] right-[8%] top-4 h-0.5 cursor-default bg-border"
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute left-[8%] top-4 h-0.5 cursor-default bg-primary transition-all"
               style={{ width: `${((stages.indexOf(stage) + 1) / stages.length) * 84}%` }}
             />
 
             <div className="relative grid grid-cols-3">
               {stages.map((s, i) => {
                 const active = stages.indexOf(stage) >= i;
+                const current = stage === s && !showAllStages;
                 return (
-                  <button
-                    key={s}
-                    onClick={() => selectStage(s)}
-                    className="flex cursor-pointer flex-col items-center text-center"
-                  >
-                    <span
+                  <div key={s} className="flex flex-col items-center text-center">
+                    {/* Only the numbered circle is clickable */}
+                    <button
+                      type="button"
+                      onClick={() => selectStage(s)}
+                      aria-label={`Show ${s} hires`}
+                      aria-current={current ? "step" : undefined}
                       className={cn(
-                        "flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-medium transition-colors",
+                        "group flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 text-xs font-medium transition-all",
+                        "hover:scale-105 hover:ring-4 hover:ring-primary/30 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40",
                         active
                           ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-card text-muted-foreground",
-                        stage === s && !showAllStages && "ring-4 ring-primary/20",
+                          : "border-border bg-card text-muted-foreground hover:border-primary/60 hover:text-primary",
+                        current && "ring-4 ring-primary/20",
                       )}
                     >
                       {i + 1}
-                    </span>
+                    </button>
                     <span
                       className={cn(
                         "mt-2 text-sm font-medium",
-                        stage === s && !showAllStages ? "text-primary" : "text-muted-foreground",
+                        current ? "text-primary" : "text-muted-foreground",
                       )}
                     >
                       {s}
@@ -356,11 +442,12 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                     <Badge variant="secondary" className="mt-2">
                       {hires.filter((h) => h.stage === s).length} hires
                     </Badge>
-                  </button>
+                  </div>
                 );
               })}
             </div>
           </div>
+
         </CardContent>
       </Card>
 
@@ -453,13 +540,12 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                     return (
                       <TableRow
                         key={h.id}
-                        onClick={() => setSelectedId(h.id)}
                         className={cn(
-                          "cursor-pointer",
                           selectedId === h.id && "bg-primary/5",
                           complete && "bg-success/5",
                         )}
                       >
+
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <Avatar className="h-9 w-9">
@@ -509,27 +595,50 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                             {h.stage}
                           </Badge>
                         </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          {editingId === h.id ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="cursor-pointer"
-                              onClick={cancelEditChecklist}
-                            >
-                              Cancel
-                            </Button>
-                          ) : (
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
                             <Button
                               size="sm"
                               variant="ghost"
                               className="cursor-pointer"
-                              onClick={() => startEditChecklist(h)}
+                              onClick={() => {
+                                if (editingId && editingId !== h.id) cancelEditChecklist();
+                                setSelectedId(h.id);
+                              }}
                             >
-                              <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit Checklist
+                              <Eye className="mr-1.5 h-3.5 w-3.5" /> View
                             </Button>
-                          )}
+                            {editingId === h.id ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  className="cursor-pointer"
+                                  onClick={saveEditChecklist}
+                                >
+                                  <Save className="mr-1.5 h-3.5 w-3.5" /> Save
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="cursor-pointer"
+                                  onClick={cancelEditChecklist}
+                                >
+                                  Cancel
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="cursor-pointer"
+                                onClick={() => startEditChecklist(h)}
+                              >
+                                <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit Checklist
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
+
                       </TableRow>
                     );
                   })}
@@ -601,7 +710,7 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                       size="icon"
                       variant="ghost"
                       className="cursor-pointer"
-                      onClick={() => setSelectedId(null)}
+                      onClick={closeChecklistPanel}
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -676,50 +785,57 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                 )}
 
                 <div className="mt-auto flex flex-wrap items-stretch gap-2 pt-4">
-                  <Button
-                    className="h-10 flex-1"
-                    disabled={selected.stage === "Regular"}
-                    onClick={() => advance(selected)}
-                  >
-                    Advance to{" "}
-                    {stages[Math.min(stages.indexOf(selected.stage) + 1, stages.length - 1)]}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-10"
-                    onClick={() =>
-                      setHires((prev) =>
-                        prev.map((h) =>
-                          h.id === selected.id
-                            ? {
-                                ...h,
-                                checklist: h.checklist.map((c) => ({ ...c, done: true })),
-                              }
-                            : h,
-                        ),
-                      )
-                    }
-                  >
-                    Mark all done
-                  </Button>
+
                   {editingId === selected.id ? (
-                    <Button
-                      variant="outline"
-                      className="h-10 cursor-pointer"
-                      onClick={cancelEditChecklist}
-                    >
-                      Cancel
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        className="h-10 cursor-pointer"
+                        onClick={() =>
+                          setHires((prev) =>
+                            prev.map((h) =>
+                              h.id === selected.id
+                                ? { ...h, checklist: h.checklist.map((c) => ({ ...c, done: true })) }
+                                : h,
+                            ),
+                          )
+                        }
+                      >
+                        Mark all done
+                      </Button>
+                      <Button className="h-10 cursor-pointer" onClick={saveEditChecklist}>
+                        <Save className="mr-1.5 h-4 w-4" /> Save
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-10 cursor-pointer"
+                        onClick={cancelEditChecklist}
+                      >
+                        Cancel
+                      </Button>
+                    </>
                   ) : (
                     <Button
                       variant="outline"
                       className="h-10 cursor-pointer"
                       onClick={() => startEditChecklist(selected)}
                     >
-                      <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+                      <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit Checklist
                     </Button>
                   )}
                 </div>
+
+                {progress(selected) === 100 && selected.stage !== "Regular" && (
+                  <Button
+                    className="mt-2 h-10 w-full cursor-pointer"
+                    onClick={() => advance(selected)}
+                  >
+                    Advance to{" "}
+                    {stages[Math.min(stages.indexOf(selected.stage) + 1, stages.length - 1)]}
+                  </Button>
+                )}
+
+
               </>
             )}
           </CardContent>
@@ -731,17 +847,25 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
         open={addOpen}
         onOpenChange={(o) => {
           setAddOpen(o);
-          if (!o) setNameLocked(false);
+          if (!o) {
+            setNameLocked(false);
+            setCompletingId(null);
+          }
         }}
       >
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Add New Hire</DialogTitle>
+            <DialogTitle className="font-display text-2xl">
+              {completingId ? "Complete Hire Record" : "Add New Hire"}
+            </DialogTitle>
             <DialogDescription>
-              Creates a pre-onboarding record with the standard requirements checklist, and adds the
-              hire to Employee Records.
+              {completingId
+                ? "Confirm this hire's details to move them to Probationary and create their portal account. Closing without saving keeps them in Pre-onboarding."
+                : "Creates a pre-onboarding record with the standard requirements checklist, and adds the hire to Employee Records."}
             </DialogDescription>
+
           </DialogHeader>
+
           <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
             Account note: the employee portal account is created with the default password{" "}
             <span className="font-medium text-foreground">{DEFAULT_ACCOUNT_PASSWORD}</span> — the
@@ -857,7 +981,9 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
             <Button variant="outline" onClick={() => setAddOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={addHire}>Add new hire</Button>
+            <Button onClick={addHire}>
+              {completingId ? "Confirm & create account" : "Add new hire"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
