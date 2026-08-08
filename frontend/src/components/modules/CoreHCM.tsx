@@ -7,23 +7,45 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  DollarSign,
+  FileCheck,
+  FileText,
+  Filter,
   GitBranch,
+  Info,
+  Layers,
   Plus,
+  RotateCcw,
   Search,
   Send,
+  ShieldAlert,
+  Sparkles,
   Trash2,
   TrendingUp,
-  UserX,
+  UserCheck,
+  UserPlus,
   Users,
+  UserX,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/portal/PageHeader";
+import { SortHead, useSort } from "@/components/portal/sortable";
 import { StatCard } from "@/components/portal/StatCard";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
@@ -57,18 +79,28 @@ import { DEFAULT_PAGE_SIZE, usePagination } from "@/hooks/usePagination";
 import { Textarea } from "@/components/ui/textarea";
 import {
   departments as seedDepartments,
-  employees,
-  orgChart,
+  employees as seedEmployees,
+  orgChart as seedOrgChart,
   positions as seedPositions,
+  salaryGrades as seedSalaryGrades,
+  hr3Recommendations as seedHr3Recommendations,
   type Department,
   type OrgNode,
   type Position,
   type Employee,
+  type SalaryGrade,
+  type HR3Recommendation,
 } from "@/data/hr";
-import { createProbationaryUserAccount, deactivateUserAccount, addAuditLog } from "@/data/users";
+import {
+  createProbationaryUserAccount,
+  deactivateUserAccount,
+  addAuditLog,
+  auditLogs,
+  type AuditEntry,
+} from "@/data/users";
 import { cn } from "@/lib/utils";
 import { requisitionStore, useRequisitions } from "@/data/requisitions";
-import { SortHead, useSort } from "@/components/portal/sortable";
+import { type Role } from "@/lib/nav";
 
 const initialsOf = (name: string) =>
   name
@@ -78,29 +110,225 @@ const initialsOf = (name: string) =>
     .join("")
     .toUpperCase();
 
-/** Standalone Employee List tab component with full Lifecycle Actions */
-function EmployeeListTab() {
-  const [empList, setEmpList] = useState<Employee[]>(employees);
+const formatMoney = (val: number) =>
+  new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(val);
+
+/* =========================================================================
+   1. ORGANIZATIONAL CHART MODULE (Org Chart, Employee List, Lifecycle Logs)
+   ========================================================================= */
+
+export function OrgChartModule({ role = "admin" }: { role?: Role }) {
+  const [activeTab, setActiveTab] = useState<"org" | "employees" | "logs">("org");
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Core HCM · Human Capital Management"
+        title="Organizational Structure & Employee Roster"
+        description="Visualize reporting hierarchy, manage employee regularization & promotions, and track lifecycle transitions."
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant={activeTab === "org" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("org")}
+            >
+              <GitBranch className="mr-2 h-4 w-4" /> Org Chart
+            </Button>
+            <Button
+              variant={activeTab === "employees" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("employees")}
+            >
+              <Users className="mr-2 h-4 w-4" /> Employee List
+            </Button>
+            <Button
+              variant={activeTab === "logs" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("logs")}
+            >
+              <FileText className="mr-2 h-4 w-4" /> Lifecycle Logs
+            </Button>
+          </div>
+        }
+      />
+
+      <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-3 max-w-md bg-muted/60 p-1">
+          <TabsTrigger value="org">Org Chart</TabsTrigger>
+          <TabsTrigger value="employees">Employee List</TabsTrigger>
+          <TabsTrigger value="logs">Lifecycle Logs</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="org" className="space-y-6">
+          <OrgChartVisualizer />
+        </TabsContent>
+
+        <TabsContent value="employees" className="space-y-6">
+          <EmployeeListManager role={role} />
+        </TabsContent>
+
+        <TabsContent value="logs" className="space-y-6">
+          <LifecycleLogsViewer />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+/* --- Org Chart Visualizer Sub-Component --- */
+function OrgChartVisualizer() {
+  const [selectedNode, setSelectedNode] = useState<OrgNode | null>(null);
+
+  return (
+    <Card className="border-border/70 shadow-sm">
+      <CardContent className="p-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-4">
+          <div>
+            <h2 className="font-display text-xl font-semibold">Hierarchy Chart</h2>
+            <p className="text-xs text-muted-foreground">
+              Property reporting lines from General Management to department staff.
+            </p>
+          </div>
+          <Badge variant="outline" className="border-primary/30 bg-primary/5 text-primary text-xs">
+            Interactive Hierarchy Tree
+          </Badge>
+        </div>
+
+        <div className="overflow-x-auto py-8">
+          <OrgTree node={seedOrgChart} root onSelect={setSelectedNode} />
+        </div>
+
+        {/* Node detail modal */}
+        <Dialog open={!!selectedNode} onOpenChange={(open) => !open && setSelectedNode(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-3">
+                <Avatar className="h-10 w-10">
+                  <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
+                    {selectedNode ? initialsOf(selectedNode.name) : ""}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <div className="font-display text-xl font-bold">{selectedNode?.name}</div>
+                  <div className="text-xs font-medium text-muted-foreground">{selectedNode?.title}</div>
+                </div>
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-sm">
+              <div className="flex justify-between border-b border-border/50 py-2">
+                <span className="text-muted-foreground">Direct Reports:</span>
+                <span className="font-semibold">{selectedNode?.children?.length || 0} teams</span>
+              </div>
+              <div className="flex justify-between border-b border-border/50 py-2">
+                <span className="text-muted-foreground">Status:</span>
+                <Badge variant="outline" className="border-success/40 bg-success/10 text-success">
+                  Active Duty
+                </Badge>
+              </div>
+              {selectedNode?.children && selectedNode.children.length > 0 && (
+                <div className="space-y-1.5 pt-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Supervised Personnel:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedNode.children.map((child) => (
+                      <Badge key={child.name} variant="secondary" className="text-xs font-normal">
+                        {child.name} ({child.title})
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button onClick={() => setSelectedNode(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OrgNodeCard({ node, root = false, onSelect }: { node: OrgNode; root?: boolean; onSelect: (n: OrgNode) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(node)}
+      className={cn(
+        "inline-flex min-w-[200px] flex-col items-center rounded-lg border px-4 py-3.5 text-center shadow-sm transition-all hover:border-primary hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        root ? "border-primary bg-primary/10 ring-1 ring-primary/30" : "border-border/80 bg-card"
+      )}
+    >
+      <Avatar className="h-10 w-10">
+        <AvatarFallback className={cn("text-xs font-semibold", root ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground")}>
+          {initialsOf(node.name)}
+        </AvatarFallback>
+      </Avatar>
+      <p className="mt-2 text-sm font-semibold leading-tight">{node.name}</p>
+      <p className="text-xs text-muted-foreground">{node.title}</p>
+    </button>
+  );
+}
+
+function OrgTree({ node, root = false, onSelect }: { node: OrgNode; root?: boolean; onSelect: (n: OrgNode) => void }) {
+  return (
+    <div className="flex flex-col items-center">
+      <OrgNodeCard node={node} root={root} onSelect={onSelect} />
+      {node.children && node.children.length > 0 && (
+        <div className="flex flex-col items-center">
+          <div className="h-6 w-px bg-border" />
+          <div className="relative flex justify-center">
+            {node.children.length > 1 && (
+              <div className="absolute top-0 h-px bg-border" style={{ left: "15%", right: "15%" }} />
+            )}
+            <div className="flex gap-8 pt-6">
+              {node.children.map((child) => (
+                <div key={child.name} className="relative flex flex-col items-center">
+                  <div className="absolute -top-6 h-6 w-px bg-border" />
+                  <OrgTree node={child} onSelect={onSelect} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* --- Employee List Manager Sub-Component --- */
+function EmployeeListManager({ role }: { role: Role }) {
+  const [empList, setEmpList] = useState<Employee[]>(seedEmployees);
+  const [recommendations, setRecommendations] = useState<HR3Recommendation[]>(seedHr3Recommendations);
   const [empSearch, setEmpSearch] = useState("");
   const [empDeptFilter, setEmpDeptFilter] = useState("all");
   const [empStatusFilter, setEmpStatusFilter] = useState("all");
   const [empTypeFilter, setEmpTypeFilter] = useState("all");
 
-  // Modal states
+  // Selection & Modal States
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
+  const [viewingEmpInfo, setViewingEmpInfo] = useState<Employee | null>(null);
+
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
 
-  // Promotion Form State
+  // Form States
   const [newPosition, setNewPosition] = useState("");
-  const [newSalaryGrade, setNewSalaryGrade] = useState("SG-12 (₱28,000 – ₱35,000)");
+  const [newSalaryGrade, setNewSalaryGrade] = useState("SG-10");
   const [promotionNotes, setPromotionNotes] = useState("");
 
-  // Exit Form State
   const [exitType, setExitType] = useState<"Resigned" | "Retired" | "Terminated">("Resigned");
   const [exitNotes, setExitNotes] = useState("");
 
-  const filteredEmployees = empList.filter((e: Employee) => {
+  // Confirmation Alert Dialog States
+  const [pendingConfirm, setPendingConfirm] = useState<{ type: "save_promote" | "save_exit" | "regularize"; data?: any } | null>(null);
+  const [pendingUnsavedExit, setPendingUnsavedExit] = useState<{ target: "promote" | "exit" } | null>(null);
+
+  const filteredEmployees = empList.filter((e) => {
     const q = empSearch.trim().toLowerCase();
     const matchesSearch =
       !q ||
@@ -115,36 +343,39 @@ function EmployeeListTab() {
   });
 
   const empPage = usePagination(filteredEmployees);
-  const deptOptions = Array.from(new Set(employees.map((e: Employee) => e.department))).sort();
+  const deptOptions = Array.from(new Set(seedEmployees.map((e) => e.department))).sort();
 
-  // Handler: Regularize Probationary Employee
-  const handleRegularize = (emp: Employee) => {
+  // Regularize Handler
+  const executeRegularization = (emp: Employee) => {
     const updated = empList.map((e) =>
       e.id === emp.id ? { ...e, employmentType: "Regular" as const, status: "Active" as const } : e
     );
     setEmpList(updated);
     createProbationaryUserAccount(emp);
     addAuditLog({
-      user: "HR Admin",
-      role: "Admin",
+      user: role === "superadmin" ? "Super Admin" : "HR Admin",
+      role: role === "superadmin" ? "Super Admin" : "Admin",
       action: `Passed HR3 Evaluation & Regularized employee ${emp.name} (${emp.id})`,
       module: "Core HCM",
       ipAddress: "192.168.10.22",
       severity: "Info",
       department: emp.department,
-      device: "Edge on Windows",
+      device: "Chrome on Windows",
     });
+
+    // Update recommendation status if present
+    setRecommendations((prev) =>
+      prev.map((r) => (r.employeeId === emp.id ? { ...r, status: "Approved & Processed" as const } : r))
+    );
+
     toast.success(`${emp.name} has passed evaluation and is now a Regular Employee! User account active.`);
   };
 
-  // Handler: Promote Employee
-  const handlePromoteSubmit = () => {
-    if (!selectedEmp || !newPosition) {
-      toast.error("Please enter the new position title.");
-      return;
-    }
+  // Promotion Handler
+  const executePromotion = () => {
+    if (!selectedEmp || !newPosition) return;
     const oldPosition = selectedEmp.position;
-    const oldSalary = selectedEmp.salaryGrade || "SG-08 (₱18,000 – ₱22,000)";
+    const oldSalary = selectedEmp.salaryGrade || "SG-08";
 
     const updated: Employee[] = empList.map((e) => {
       if (e.id === selectedEmp.id) {
@@ -162,7 +393,7 @@ function EmployeeListTab() {
               newPosition,
               oldSalaryGrade: oldSalary,
               newSalaryGrade,
-              notes: promotionNotes || "Succession planning promotion",
+              notes: promotionNotes || "HR3 Succession planning promotion",
             },
           ],
         };
@@ -172,15 +403,19 @@ function EmployeeListTab() {
 
     setEmpList(updated);
     addAuditLog({
-      user: "HR Admin",
-      role: "Admin",
+      user: role === "superadmin" ? "Super Admin" : "HR Admin",
+      role: role === "superadmin" ? "Super Admin" : "Admin",
       action: `Promoted ${selectedEmp.name} to ${newPosition} (${newSalaryGrade})`,
       module: "Core HCM",
       ipAddress: "192.168.10.22",
       severity: "Info",
       department: selectedEmp.department,
-      device: "Edge on Windows",
+      device: "Chrome on Windows",
     });
+
+    setRecommendations((prev) =>
+      prev.map((r) => (r.employeeId === selectedEmp.id ? { ...r, status: "Approved & Processed" as const } : r))
+    );
 
     toast.success(`Promoted ${selectedEmp.name} to ${newPosition}! Salary Grade updated.`);
     setShowPromoteModal(false);
@@ -189,8 +424,8 @@ function EmployeeListTab() {
     setPromotionNotes("");
   };
 
-  // Handler: Exit / Separation Processing
-  const handleExitSubmit = () => {
+  // Exit Separation Handler
+  const executeExit = () => {
     if (!selectedEmp) return;
 
     const updated: Employee[] = empList.map((e) => {
@@ -211,19 +446,17 @@ function EmployeeListTab() {
     });
 
     setEmpList(updated);
-
-    // DEACTIVATE USER ACCOUNT IN USER MANAGEMENT
     deactivateUserAccount(selectedEmp.email, `Exit Status: ${exitType}`);
 
     addAuditLog({
-      user: "HR Admin",
-      role: "Admin",
+      user: role === "superadmin" ? "Super Admin" : "HR Admin",
+      role: role === "superadmin" ? "Super Admin" : "Admin",
       action: `Processed Exit Status (${exitType}) for ${selectedEmp.name}. ESS User account deactivated.`,
       module: "Core HCM",
       ipAddress: "192.168.10.22",
       severity: "Warning",
       department: selectedEmp.department,
-      device: "Edge on Windows",
+      device: "Chrome on Windows",
     });
 
     toast.warning(`Exit processed for ${selectedEmp.name} (${exitType}). System user account disabled.`);
@@ -233,1551 +466,1614 @@ function EmployeeListTab() {
   };
 
   return (
-    <Card className="border-border/70">
+    <div className="space-y-6">
+      {/* PERFORMANCE & DEVELOPMENT (HR3) EVALUATION RECOMMENDATIONS CARD */}
+      <Card className="border-gold/40 bg-gradient-to-r from-gold-soft/30 via-background to-background shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="grid h-8 w-8 place-items-center rounded-md bg-gold/20 text-gold-foreground">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              <div>
+                <CardTitle className="font-display text-lg font-semibold">
+                  Performance &amp; Development Handoff (HR3 Evaluations)
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Prerequisites for employee Regularization and Promotion based on recent performance scores.
+                </p>
+              </div>
+            </div>
+            <Badge variant="outline" className="border-gold/50 bg-gold/10 text-gold-foreground text-xs">
+              HR3 Evaluation Sync Active
+            </Badge>
+          </div>
+        </CardHeader>
+
+        <CardContent className="pt-0">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {recommendations.map((rec) => (
+              <div
+                key={rec.id}
+                className={cn(
+                  "flex flex-col justify-between rounded-lg border p-3.5 transition-all",
+                  rec.status === "Approved & Processed"
+                    ? "border-success/30 bg-success/5 opacity-70"
+                    : "border-border/80 bg-card hover:border-gold/60 shadow-2xs"
+                )}
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-semibold text-sm">{rec.employeeName}</span>
+                    <Badge
+                      variant="outline"
+                      className={
+                        rec.recommendationType === "Regularization"
+                          ? "border-primary/40 bg-primary/10 text-primary text-[10px]"
+                          : "border-gold/50 bg-gold/10 text-gold-foreground text-[10px]"
+                      }
+                    >
+                      {rec.recommendationType}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">{rec.department} · Score: <strong className="text-foreground">{rec.evaluationScore}%</strong></p>
+                  <p className="mt-2 text-xs text-muted-foreground italic line-clamp-2">"{rec.comments}"</p>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-2.5">
+                  <span className="text-[11px] text-muted-foreground">{rec.status}</span>
+                  {rec.status === "Pending HR Action" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-gold/50 text-gold-foreground hover:bg-gold/10"
+                      onClick={() => {
+                        const target = empList.find((e) => e.id === rec.employeeId);
+                        if (!target) return;
+                        if (rec.recommendationType === "Regularization") {
+                          setPendingConfirm({ type: "regularize", data: target });
+                        } else {
+                          setSelectedEmp(target);
+                          setNewPosition(rec.suggestedPosition || target.position);
+                          setNewSalaryGrade(rec.suggestedSalaryGrade || "SG-10");
+                          setShowPromoteModal(true);
+                        }
+                      }}
+                    >
+                      Apply Action
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* MAIN EMPLOYEE ROSTER CARD */}
+      <Card className="border-border/70 shadow-sm">
+        <CardContent className="p-6">
+          {/* SEARCH & FILTER CONTROLS (UNIFIED HEIGHT & STYLES) */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display text-xl font-semibold">Employee Roster</h2>
+              <p className="text-xs text-muted-foreground">
+                {filteredEmployees.length} record{filteredEmployees.length !== 1 ? "s" : ""} found
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[14rem]">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="h-9 border-border bg-card pl-8 text-xs shadow-2xs"
+                  placeholder="Search name, ID, position…"
+                  value={empSearch}
+                  onChange={(e) => setEmpSearch(e.target.value)}
+                />
+              </div>
+              <Select value={empDeptFilter} onValueChange={setEmpDeptFilter}>
+                <SelectTrigger className="h-9 w-44 text-xs bg-card shadow-2xs">
+                  <SelectValue placeholder="All departments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All departments</SelectItem>
+                  {deptOptions.map((d) => (
+                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={empTypeFilter} onValueChange={setEmpTypeFilter}>
+                <SelectTrigger className="h-9 w-36 text-xs bg-card shadow-2xs">
+                  <SelectValue placeholder="All types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  <SelectItem value="Probationary">Probationary</SelectItem>
+                  <SelectItem value="Regular">Regular</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={empStatusFilter} onValueChange={setEmpStatusFilter}>
+                <SelectTrigger className="h-9 w-36 text-xs bg-card shadow-2xs">
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="Active">Active</SelectItem>
+                  <SelectItem value="Resigned">Resigned</SelectItem>
+                  <SelectItem value="Retired">Retired</SelectItem>
+                  <SelectItem value="Terminated">Terminated</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="mt-4 overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Employee ID</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Position &amp; Grade</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Date Hired</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {empPage.pageItems.map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell className="font-mono text-xs font-medium">{e.id}</TableCell>
+                    <TableCell className="font-medium">{e.name}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{e.department}</TableCell>
+                    <TableCell className="text-xs">
+                      <div>{e.position}</div>
+                      <div className="text-[11px] text-muted-foreground">{e.salaryGrade || "SG-08"}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          e.employmentType === "Regular"
+                            ? "border-success/40 text-success text-[11px]"
+                            : e.employmentType === "Probationary"
+                            ? "border-gold/40 text-gold text-[11px]"
+                            : "border-border text-[11px]"
+                        }
+                      >
+                        {e.employmentType}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{e.dateHired}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          e.status === "Active"
+                            ? "border-success/40 bg-success/10 text-success text-[11px]"
+                            : e.status === "Resigned" || e.status === "Retired" || e.status === "Terminated"
+                            ? "border-destructive/40 bg-destructive/10 text-destructive text-[11px]"
+                            : "border-border text-muted-foreground text-[11px]"
+                        }
+                      >
+                        {e.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => setViewingEmpInfo(e)}
+                        >
+                          <Info className="mr-1 h-3.5 w-3.5 text-primary" /> View Info
+                        </Button>
+
+                        {e.employmentType === "Probationary" && e.status === "Active" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-2 text-xs border-success/50 text-success hover:bg-success/10"
+                            onClick={() => setPendingConfirm({ type: "regularize", data: e })}
+                          >
+                            <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Regularize
+                          </Button>
+                        )}
+
+                        {e.status === "Active" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2 text-xs"
+                              onClick={() => {
+                                setSelectedEmp(e);
+                                setNewPosition(e.position);
+                                setNewSalaryGrade(e.salaryGrade || "SG-10");
+                                setShowPromoteModal(true);
+                              }}
+                            >
+                              <TrendingUp className="mr-1 h-3.5 w-3.5 text-primary" /> Promote
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2 text-xs text-destructive hover:bg-destructive/10"
+                              onClick={() => {
+                                setSelectedEmp(e);
+                                setShowExitModal(true);
+                              }}
+                            >
+                              <UserX className="mr-1 h-3.5 w-3.5" /> Exit
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <TablePagination
+            page={empPage.page}
+            pageCount={empPage.pageCount}
+            from={empPage.from}
+            to={empPage.to}
+            total={empPage.total}
+            label="employees"
+            onPageChange={empPage.setPage}
+          />
+        </CardContent>
+      </Card>
+
+      {/* VIEW EMPLOYEE INFO MODAL */}
+      <Dialog open={!!viewingEmpInfo} onOpenChange={(open) => !open && setViewingEmpInfo(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <Avatar className="h-10 w-10">
+                <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
+                  {viewingEmpInfo ? initialsOf(viewingEmpInfo.name) : ""}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <div className="font-display text-xl font-bold">{viewingEmpInfo?.name}</div>
+                <div className="text-xs text-muted-foreground">{viewingEmpInfo?.id} · {viewingEmpInfo?.department}</div>
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-sm">
+            <div className="grid grid-cols-2 gap-4 rounded-lg border p-3 bg-muted/20">
+              <div>
+                <span className="text-xs text-muted-foreground">Current Position:</span>
+                <p className="font-semibold">{viewingEmpInfo?.position}</p>
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Salary Grade:</span>
+                <p className="font-semibold text-primary">{viewingEmpInfo?.salaryGrade || "SG-08 (₱18,000 – ₱22,000)"}</p>
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Employment Type:</span>
+                <p className="font-semibold">{viewingEmpInfo?.employmentType}</p>
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Date Hired:</span>
+                <p className="font-semibold">{viewingEmpInfo?.dateHired}</p>
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Work Email:</span>
+                <p className="font-medium text-xs truncate">{viewingEmpInfo?.email}</p>
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Supervisor:</span>
+                <p className="font-medium text-xs">{viewingEmpInfo?.supervisor}</p>
+              </div>
+            </div>
+
+            {viewingEmpInfo?.promotionHistory && viewingEmpInfo.promotionHistory.length > 0 && (
+              <div className="space-y-2 border-t pt-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Promotion &amp; Career Progression Log:
+                </span>
+                <div className="space-y-2">
+                  {viewingEmpInfo.promotionHistory.map((h, i) => (
+                    <div key={i} className="rounded-md border p-2.5 text-xs space-y-1 bg-card">
+                      <div className="flex justify-between font-semibold">
+                        <span>{h.oldPosition} ➔ {h.newPosition}</span>
+                        <span className="text-muted-foreground">{h.date}</span>
+                      </div>
+                      <div className="text-muted-foreground">Salary: {h.oldSalaryGrade} ➔ {h.newSalaryGrade}</div>
+                      <div className="italic text-muted-foreground">{h.notes}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setViewingEmpInfo(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PROMOTION MODAL WITH CONFIRMATIONS */}
+      <Dialog
+        open={showPromoteModal}
+        onOpenChange={(open) => {
+          if (!open && (newPosition !== selectedEmp?.position || promotionNotes)) {
+            setPendingUnsavedExit({ target: "promote" });
+          } else {
+            setShowPromoteModal(open);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Award className="h-5 w-5 text-primary" /> Promote Employee — {selectedEmp?.name}
+            </DialogTitle>
+            <DialogDescription>Update position title and salary grade in Core HCM.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Current Position Title</Label>
+              <Input value={selectedEmp?.position || ""} disabled className="bg-muted text-xs" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">New Promoted Position Title</Label>
+              <Input
+                value={newPosition}
+                onChange={(e) => setNewPosition(e.target.value)}
+                placeholder="e.g. Senior Receptionist / Supervisor"
+                className="text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">New Salary Grade</Label>
+              <Select value={newSalaryGrade} onValueChange={setNewSalaryGrade}>
+                <SelectTrigger className="text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {seedSalaryGrades.map((sg) => (
+                    <SelectItem key={sg.id} value={sg.code}>
+                      {sg.code} ({sg.title} · {formatMoney(sg.minSalary)} – {formatMoney(sg.maxSalary)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Succession Justification &amp; Evaluation Notes</Label>
+              <Textarea
+                value={promotionNotes}
+                onChange={(e) => setPromotionNotes(e.target.value)}
+                placeholder="HR3 evaluation score details..."
+                rows={3}
+                className="text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (newPosition !== selectedEmp?.position || promotionNotes) {
+                  setPendingUnsavedExit({ target: "promote" });
+                } else {
+                  setShowPromoteModal(false);
+                }
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => setPendingConfirm({ type: "save_promote" })}>
+              Save Promotion
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* EXIT MODAL WITH CONFIRMATIONS */}
+      <Dialog
+        open={showExitModal}
+        onOpenChange={(open) => {
+          if (!open && exitNotes) {
+            setPendingUnsavedExit({ target: "exit" });
+          } else {
+            setShowExitModal(open);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <UserX className="h-5 w-5" /> Process Exit Status — {selectedEmp?.name}
+            </DialogTitle>
+            <DialogDescription>Mark exit status in HCM. This will automatically deactivate user account.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Exit Reason / Trigger</Label>
+              <Select value={exitType} onValueChange={(v: any) => setExitType(v)}>
+                <SelectTrigger className="text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Resigned">Resigned (Initiated via ESS / HR)</SelectItem>
+                  <SelectItem value="Retired">Retired (Age / Policy)</SelectItem>
+                  <SelectItem value="Terminated">Terminated (Disciplinary / Performance)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Clearance &amp; Exit Notes</Label>
+              <Textarea
+                value={exitNotes}
+                onChange={(e) => setExitNotes(e.target.value)}
+                placeholder="Exit clearance interview notes..."
+                rows={3}
+                className="text-xs"
+              />
+            </div>
+
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+              ⚠️ <strong>Security Action</strong>: Confirming exit status will instantly revoke user credentials in User Management.
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (exitNotes) {
+                  setPendingUnsavedExit({ target: "exit" });
+                } else {
+                  setShowExitModal(false);
+                }
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => setPendingConfirm({ type: "save_exit" })}>
+              Confirm Exit &amp; Deactivate Account
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CONFIRMATION ALERT DIALOG (SAVE / ACTION) */}
+      <AlertDialog open={!!pendingConfirm} onOpenChange={(open) => !open && setPendingConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Action</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingConfirm?.type === "save_promote" && `Are you sure you want to promote ${selectedEmp?.name} to ${newPosition}?`}
+              {pendingConfirm?.type === "save_exit" && `Are you sure you want to process exit status (${exitType}) for ${selectedEmp?.name}? User account will be disabled.`}
+              {pendingConfirm?.type === "regularize" && `Are you sure you want to convert ${pendingConfirm?.data?.name} to Regular employee status?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingConfirm(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingConfirm?.type === "save_promote") executePromotion();
+                if (pendingConfirm?.type === "save_exit") executeExit();
+                if (pendingConfirm?.type === "regularize") executeRegularization(pendingConfirm.data);
+                setPendingConfirm(null);
+              }}
+            >
+              Yes, Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* CONFIRMATION ALERT DIALOG (UNSAVED CHANGES EXIT) */}
+      <AlertDialog open={!!pendingUnsavedExit} onOpenChange={(open) => !open && setPendingUnsavedExit(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-amber-600">Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes in this form. Are you sure you want to exit without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingUnsavedExit(null)}>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingUnsavedExit?.target === "promote") setShowPromoteModal(false);
+                if (pendingUnsavedExit?.target === "exit") setShowExitModal(false);
+                setPendingUnsavedExit(null);
+              }}
+            >
+              Discard &amp; Exit
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+/* --- Lifecycle Logs Viewer Sub-Component --- */
+function LifecycleLogsViewer() {
+  const [filterType, setFilterType] = useState("all");
+  const [search, setSearch] = useState("");
+
+  const lifecycleEntries = auditLogs.filter(
+    (log) =>
+      log.action.includes("Regularized") ||
+      log.action.includes("Promoted") ||
+      log.action.includes("Exit") ||
+      log.action.includes("Deactivated") ||
+      log.module === "Core HCM"
+  );
+
+  const filteredLogs = lifecycleEntries.filter((log) => {
+    const q = search.toLowerCase();
+    const matchesSearch = !q || log.action.toLowerCase().includes(q) || log.user.toLowerCase().includes(q);
+    const matchesType =
+      filterType === "all" ||
+      (filterType === "Promoted" && log.action.includes("Promoted")) ||
+      (filterType === "Regularized" && log.action.includes("Regularized")) ||
+      (filterType === "Exit" && (log.action.includes("Exit") || log.action.includes("Deactivated")));
+    return matchesSearch && matchesType;
+  });
+
+  const page = usePagination(filteredLogs);
+
+  return (
+    <Card className="border-border/70 shadow-sm">
       <CardContent className="p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
-            <h2 className="font-display text-2xl font-semibold">Employee Roster & Lifecycle Management</h2>
+            <h2 className="font-display text-xl font-semibold">Lifecycle Transition Logs</h2>
             <p className="text-xs text-muted-foreground">
-              {filteredEmployees.length} employee{filteredEmployees.length !== 1 ? "s" : ""} shown · Core HCM master record
+              Audit log records of promotions, regularizations, and employee exit separations.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[14rem]">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-8"
-                placeholder="Search name, ID, position…"
-                value={empSearch}
-                onChange={(e) => setEmpSearch(e.target.value)}
-              />
-            </div>
-            <Select value={empDeptFilter} onValueChange={setEmpDeptFilter}>
-              <SelectTrigger className="w-44">
-                <SelectValue placeholder="All departments" />
+            <Input
+              placeholder="Search employee or action…"
+              className="h-9 w-52 text-xs bg-card"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <Select value={filterType} onValueChange={setFilterType}>
+              <SelectTrigger className="h-9 w-40 text-xs bg-card">
+                <SelectValue placeholder="All events" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All departments</SelectItem>
-                {deptOptions.map((d) => (
-                  <SelectItem key={d} value={d}>{d}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={empTypeFilter} onValueChange={setEmpTypeFilter}>
-              <SelectTrigger className="w-36">
-                <SelectValue placeholder="All types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                <SelectItem value="Probationary">Probationary</SelectItem>
-                <SelectItem value="Regular">Regular</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={empStatusFilter} onValueChange={setEmpStatusFilter}>
-              <SelectTrigger className="w-36">
-                <SelectValue placeholder="All statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="Active">Active</SelectItem>
-                <SelectItem value="Resigned">Resigned</SelectItem>
-                <SelectItem value="Retired">Retired</SelectItem>
-                <SelectItem value="Terminated">Terminated</SelectItem>
+                <SelectItem value="all">All lifecycle events</SelectItem>
+                <SelectItem value="Regularized">Regularization</SelectItem>
+                <SelectItem value="Promoted">Promotion</SelectItem>
+                <SelectItem value="Exit">Exits &amp; Separations</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto">
+        <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Employee ID</TableHead>
-                <TableHead>Name</TableHead>
+                <TableHead>Log ID</TableHead>
+                <TableHead>Timestamp</TableHead>
+                <TableHead>Actor / Role</TableHead>
+                <TableHead>Action Details</TableHead>
                 <TableHead>Department</TableHead>
-                <TableHead>Position &amp; Grade</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Date Hired</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Lifecycle Actions</TableHead>
+                <TableHead>Severity</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {empPage.pageItems.map((e: Employee) => (
-                <TableRow key={e.id}>
-                  <TableCell className="font-mono text-xs">{e.id}</TableCell>
-                  <TableCell className="font-medium">{e.name}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{e.department}</TableCell>
-                  <TableCell className="text-sm">
-                    <div>{e.position}</div>
-                    <div className="text-[11px] text-muted-foreground">{e.salaryGrade || "SG-08 (Standard)"}</div>
+              {page.pageItems.map((log) => (
+                <TableRow key={log.id}>
+                  <TableCell className="font-mono text-xs font-medium">{log.id}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{log.timestamp}</TableCell>
+                  <TableCell className="text-xs">
+                    <span className="font-medium">{log.user}</span>
+                    <span className="text-muted-foreground block text-[11px]">{log.role}</span>
                   </TableCell>
+                  <TableCell className="text-xs font-medium">{log.action}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{log.department}</TableCell>
                   <TableCell>
                     <Badge
                       variant="outline"
                       className={
-                        e.employmentType === "Regular"
-                          ? "border-success/40 text-success"
-                          : e.employmentType === "Probationary"
-                          ? "border-gold/40 text-gold"
-                          : "border-border"
+                        log.severity === "Warning" || log.severity === "Critical"
+                          ? "border-destructive/40 text-destructive text-[10px]"
+                          : "border-primary/40 text-primary text-[10px]"
                       }
                     >
-                      {e.employmentType}
+                      {log.severity}
                     </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{e.dateHired}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        e.status === "Active"
-                          ? "border-success/40 bg-success/10 text-success"
-                          : e.status === "Resigned" || e.status === "Retired" || e.status === "Terminated"
-                          ? "border-destructive/40 bg-destructive/10 text-destructive"
-                          : "border-border text-muted-foreground"
-                      }
-                    >
-                      {e.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1.5">
-                      {e.employmentType === "Probationary" && e.status === "Active" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs border-success/50 text-success hover:bg-success/10"
-                          onClick={() => handleRegularize(e)}
-                        >
-                          <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-                          Regularize
-                        </Button>
-                      )}
-
-                      {e.status === "Active" && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs"
-                            onClick={() => {
-                              setSelectedEmp(e);
-                              setNewPosition(e.position);
-                              setShowPromoteModal(true);
-                            }}
-                          >
-                            <TrendingUp className="mr-1 h-3.5 w-3.5 text-primary" />
-                            Promote
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs text-destructive hover:bg-destructive/10"
-                            onClick={() => {
-                              setSelectedEmp(e);
-                              setShowExitModal(true);
-                            }}
-                          >
-                            <UserX className="mr-1 h-3.5 w-3.5" />
-                            Process Exit
-                          </Button>
-                        </>
-                      )}
-                    </div>
                   </TableCell>
                 </TableRow>
               ))}
-              {filteredEmployees.length === 0 && (
+              {filteredLogs.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
-                    No employees match your filters.
+                  <TableCell colSpan={6} className="py-8 text-center text-xs text-muted-foreground">
+                    No lifecycle transition log entries found.
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </div>
+
         <TablePagination
-          page={empPage.page}
-          pageCount={empPage.pageCount}
-          from={empPage.from}
-          to={empPage.to}
-          total={empPage.total}
-          label="employees"
-          onPageChange={empPage.setPage}
+          page={page.page}
+          pageCount={page.pageCount}
+          from={page.from}
+          to={page.to}
+          total={page.total}
+          label="lifecycle logs"
+          onPageChange={page.setPage}
         />
-
-        {/* PROMOTION MODAL */}
-        <Dialog open={showPromoteModal} onOpenChange={setShowPromoteModal}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Award className="h-5 w-5 text-primary" />
-                Promote Employee — {selectedEmp?.name}
-              </DialogTitle>
-              <DialogDescription>
-                Update employee position title and salary grade in Core HCM.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
-                <Label>Current Position</Label>
-                <Input value={selectedEmp?.position || ""} disabled className="bg-muted" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>New Promoted Title</Label>
-                <Input
-                  value={newPosition}
-                  onChange={(e) => setNewPosition(e.target.value)}
-                  placeholder="e.g. Senior Receptionist / Supervisor"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>New Salary Grade &amp; Band</Label>
-                <Select value={newSalaryGrade} onValueChange={setNewSalaryGrade}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select salary band" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="SG-10 (₱22,000 – ₱26,000)">SG-10 (₱22,000 – ₱26,000)</SelectItem>
-                    <SelectItem value="SG-12 (₱28,000 – ₱35,000)">SG-12 (₱28,000 – ₱35,000)</SelectItem>
-                    <SelectItem value="SG-15 (₱38,000 – ₱48,000)">SG-15 (₱38,000 – ₱48,000)</SelectItem>
-                    <SelectItem value="SG-18 (₱50,000 – ₱65,000)">SG-18 (₱50,000 – ₱65,000)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Succession Planning &amp; Promotion Justification</Label>
-                <Textarea
-                  value={promotionNotes}
-                  onChange={(e) => setPromotionNotes(e.target.value)}
-                  placeholder="HR3 evaluation results, leadership performance rating, recommendation notes..."
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowPromoteModal(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handlePromoteSubmit}>
-                Confirm Promotion
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* EXIT SEPARATION MODAL */}
-        <Dialog open={showExitModal} onOpenChange={setShowExitModal}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-destructive">
-                <UserX className="h-5 w-5" />
-                Process Exit Status — {selectedEmp?.name}
-              </DialogTitle>
-              <DialogDescription>
-                Mark exit status in HCM. This will automatically deactivate their user account.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
-                <Label>Exit Reason / Trigger</Label>
-                <Select value={exitType} onValueChange={(v: any) => setExitType(v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Resigned">Resigned (Initiated via ESS / HR)</SelectItem>
-                    <SelectItem value="Retired">Retired (Age / Retirement policy)</SelectItem>
-                    <SelectItem value="Terminated">Terminated (Performance / Disciplinary)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Separation &amp; Clearance Notes</Label>
-                <Textarea
-                  value={exitNotes}
-                  onChange={(e) => setExitNotes(e.target.value)}
-                  placeholder="Exit interview notes, clearance status details, COE request..."
-                  rows={3}
-                />
-              </div>
-
-              <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400">
-                ⚠️ <strong>Security Notice</strong>: Confirming exit status will instantly revoke ESS login credentials in User Management.
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowExitModal(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleExitSubmit}>
-                Process Exit &amp; Deactivate Account
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </CardContent>
     </Card>
   );
 }
 
-/** Top-down organizational chart with proper connector lines. */
-function OrgNodeCard({
-  node,
-  root = false,
-  onSelect,
-}: {
-  node: OrgNode;
-  root?: boolean;
-  onSelect: (n: OrgNode) => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(node)}
-      aria-label={`View details for ${node.name}`}
-      className={cn(
-        "inline-flex min-w-[190px] flex-col items-center rounded-md border px-4 py-3 text-center shadow-sm transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        root ? "border-primary bg-primary/10" : "border-border bg-card",
-      )}
-    >
-      <Avatar className="h-9 w-9">
-        <AvatarFallback
-          className={cn(
-            "text-[0.7rem]",
-            root ? "bg-primary text-primary-foreground" : "bg-secondary",
-          )}
-        >
-          {initialsOf(node.name)}
-        </AvatarFallback>
-      </Avatar>
-      <p className="mt-2 text-sm font-medium leading-tight">{node.name}</p>
-      <p className="text-xs text-muted-foreground">{node.title}</p>
-    </button>
-  );
-}
+/* =========================================================================
+   2. DEPARTMENT & POSITION MODULE (Dept & Pos, Salary Grades, Requisitions)
+   ========================================================================= */
 
-function OrgTree({
-  node,
-  root = false,
-  onSelect,
-}: {
-  node: OrgNode;
-  root?: boolean;
-  onSelect: (n: OrgNode) => void;
-}) {
-  const children = node.children ?? [];
+export function DeptPosModule({ role = "admin" }: { role?: Role }) {
+  const [activeTab, setActiveTab] = useState<"deptpos" | "salary" | "reqs">("deptpos");
+
   return (
-    <div className="flex flex-col items-center">
-      <OrgNodeCard node={node} root={root} onSelect={onSelect} />
-      {children.length > 0 && (
-        <>
-          {/* stem down from parent */}
-          <div className="h-6 w-px bg-border" />
-          <div className="relative flex items-start justify-center gap-6">
-            {/* horizontal connector spanning children */}
-            {children.length > 1 && (
-              <div className="absolute left-0 right-0 top-0 mx-auto h-px bg-border" />
-            )}
-            {children.map((c) => (
-              <div key={c.name} className="relative flex flex-col items-center pt-6">
-                <div className="absolute top-0 h-6 w-px bg-border" />
-                <OrgTree node={c} onSelect={onSelect} />
-              </div>
-            ))}
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Core HCM · Organization Setup"
+        title="Department, Position &amp; Salary Grade Management"
+        description="Configure property departments, define position headcounts, manage salary grade structures, and approve requisitions."
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant={activeTab === "deptpos" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("deptpos")}
+            >
+              <Building2 className="mr-2 h-4 w-4" /> Dept &amp; Positions
+            </Button>
+            <Button
+              variant={activeTab === "salary" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("salary")}
+            >
+              <DollarSign className="mr-2 h-4 w-4" /> Salary Grades
+            </Button>
+            <Button
+              variant={activeTab === "reqs" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("reqs")}
+            >
+              <FileCheck className="mr-2 h-4 w-4" /> Requisitions
+            </Button>
           </div>
-        </>
-      )}
+        }
+      />
+
+      <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-3 max-w-md bg-muted/60 p-1">
+          <TabsTrigger value="deptpos">Dept &amp; Position</TabsTrigger>
+          <TabsTrigger value="salary">Salary Grades</TabsTrigger>
+          <TabsTrigger value="reqs">Requisitions</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="deptpos" className="space-y-6">
+          <DepartmentAndPositionManager role={role} />
+        </TabsContent>
+
+        <TabsContent value="salary" className="space-y-6">
+          <SalaryGradeManager />
+        </TabsContent>
+
+        <TabsContent value="reqs" className="space-y-6">
+          <RequisitionManager />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
 
-export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
-  const [departments, setDepartments] = useState<Department[]>(seedDepartments);
-  const [positions, setPositions] = useState<Position[]>(seedPositions);
-  const requisitions = useRequisitions();
+/* --- Department and Position Manager Sub-Component --- */
+function DepartmentAndPositionManager({ role }: { role: Role }) {
+  const [deptList, setDeptList] = useState<Department[]>(seedDepartments);
+  const [posList, setPosList] = useState<Position[]>(seedPositions);
+  const [sGrades] = useState<SalaryGrade[]>(seedSalaryGrades);
 
-  const [selectedDept, setSelectedDept] = useState<string>(departments[0]!.name);
-  const [posFilter, setPosFilter] = useState<string>("all");
-  const [query, setQuery] = useState("");
-  const [openPositionId, setOpenPositionId] = useState<string | null>(null);
+  // NOT preselected! Shows ALL departments and ALL positions by default!
+  const [deptFilter, setDeptFilter] = useState("all");
 
-  const [createDeptOpen, setCreateDeptOpen] = useState(false);
-  const [deptForm, setDeptForm] = useState({ name: "", description: "", head: "", budget: "" });
-  const [editDept, setEditDept] = useState<Department | null>(null);
-  const [transferEmployee, setTransferEmployee] = useState<(typeof employees)[number] | null>(null);
-  const [transfer, setTransfer] = useState({ department: "", date: "2026-08-16" });
-  const [createPosOpen, setCreatePosOpen] = useState(false);
-  const [posForm, setPosForm] = useState({
-    title: "",
-    department: seedDepartments[0]!.name,
-    level: "Rank & File",
-    headcount: 1,
-    salaryBand: "",
-  });
-  const [orgNode, setOrgNode] = useState<OrgNode | null>(null);
-  const [requestFor, setRequestFor] = useState<Position | null>(null);
-  const [reqForm, setReqForm] = useState({ count: 1, urgency: "Normal", justification: "" });
+  // Modals & Form States
+  const [editingDept, setEditingDept] = useState<Department | null>(null);
+  const [editingPos, setEditingPos] = useState<Position | null>(null);
+  const [isNewPos, setIsNewPos] = useState(false);
+  const [isNewDept, setIsNewDept] = useState(false);
 
-  // Requisitions tab: filters, search, and pagination
-  const [reqDeptFilter, setReqDeptFilter] = useState("all");
-  const [reqDateFilter, setReqDateFilter] = useState("all");
-  const [reqQuery, setReqQuery] = useState("");
-  const [reqPage, setReqPage] = useState(1);
-  const REQ_PAGE_SIZE = DEFAULT_PAGE_SIZE;
+  // Department Form
+  const [deptCode, setDeptCode] = useState("");
+  const [deptName, setDeptName] = useState("");
+  const [deptHead, setDeptHead] = useState("");
 
-  const totalStaff = departments.reduce((t, d) => t + d.staff, 0);
-  const totalReq = departments.reduce((t, d) => t + d.openRequisitions, 0) + requisitions.length;
+  // Position Form
+  const [posTitle, setPosTitle] = useState("");
+  const [posDept, setPosDept] = useState("Front Office");
+  const [posLevel, setPosLevel] = useState<Position["level"]>("Rank & File");
+  const [posTarget, setPosTarget] = useState("5");
+  const [posFilled, setPosFilled] = useState("3");
+  const [posSGrade, setPosSGrade] = useState("SG-05");
 
-  const deletePosition = (id: string) => {
-    if (role !== "superadmin") {
-      toast.error("Only a Super Admin can delete a job position");
+  // Confirmation Alert States
+  const [pendingConfirmSave, setPendingConfirmSave] = useState<{ type: "dept" | "pos" } | null>(null);
+  const [pendingUnsavedExit, setPendingUnsavedExit] = useState<{ target: "dept" | "pos" } | null>(null);
+
+  // Helper: derive department staff count dynamically by summing position filled counts under that department
+  const getDerivedStaffCount = (deptName: string) => {
+    return posList.filter((p) => p.department === deptName).reduce((acc, curr) => acc + curr.filled, 0);
+  };
+
+  // Helper: list candidate heads (Active employees, excluding heads of OTHER departments)
+  const candidateHeads = seedEmployees.filter(
+    (emp) => emp.status === "Active"
+  );
+
+  // Filter positions
+  const filteredPositions = posList.filter(
+    (p) => deptFilter === "all" || p.department === deptFilter
+  );
+
+  // Save Department Handler
+  const executeSaveDepartment = () => {
+    if (!deptName || !deptCode) {
+      toast.error("Department Name and Code are required.");
       return;
     }
-    setPositions((prev) => prev.filter((p) => p.id !== id));
-    toast.success(`Position ${id} deleted`);
+
+    if (isNewDept) {
+      const newD: Department = {
+        code: deptCode,
+        name: deptName,
+        description: "",
+        head: deptHead || "Unassigned",
+        staff: 0,
+        openRequisitions: 0,
+        budget: 0,
+      };
+      setDeptList((prev) => [...prev, newD]);
+      toast.success(`Department ${deptName} created.`);
+    } else if (editingDept) {
+      setDeptList((prev) =>
+        prev.map((d) => (d.code === editingDept.code ? { ...d, code: deptCode, name: deptName, head: deptHead } : d))
+      );
+      toast.success(`Department ${deptName} updated.`);
+    }
+
+    setEditingDept(null);
+    setIsNewDept(false);
   };
 
-  const membersOf = (positionTitle: string) =>
-    employees.filter((e) => e.position === positionTitle);
+  // Save Position Handler
+  const executeSavePosition = () => {
+    if (!posTitle) {
+      toast.error("Job position title is required.");
+      return;
+    }
 
-  const q = query.trim().toLowerCase();
+    const sgObj = sGrades.find((sg) => sg.code === posSGrade);
+    const bandLabel = sgObj ? `${posSGrade} (${formatMoney(sgObj.minSalary)} – ${formatMoney(sgObj.maxSalary)})` : posSGrade;
 
-  const deptMatchesQuery = (d: Department) =>
-    !q ||
-    d.name.toLowerCase().includes(q) ||
-    positions.some((p) => p.department === d.name && p.title.toLowerCase().includes(q)) ||
-    employees.some((e) => e.department === d.name && e.name.toLowerCase().includes(q));
+    if (isNewPos) {
+      const newP: Position = {
+        id: `POS-0${posList.length + 1}`,
+        title: posTitle,
+        department: posDept,
+        level: posLevel,
+        headcount: Number(posTarget) || 1,
+        filled: Number(posFilled) || 0,
+        salaryBand: bandLabel,
+      };
+      setPosPosList((prev) => [...prev, newP]);
+      toast.success(`Position ${posTitle} added to ${posDept}.`);
+    } else if (editingPos) {
+      setPosPosList((prev) =>
+        prev.map((p) =>
+          p.id === editingPos.id
+            ? {
+                ...p,
+                title: posTitle,
+                department: posDept,
+                level: posLevel,
+                headcount: Number(posTarget),
+                filled: Number(posFilled),
+                salaryBand: bandLabel,
+              }
+            : p
+        )
+      );
+      toast.success(`Position ${posTitle} updated.`);
+    }
 
-  const posMatchesQuery = (p: Position) =>
-    !q ||
-    p.title.toLowerCase().includes(q) ||
-    p.department.toLowerCase().includes(q) ||
-    membersOf(p.title).some((e) => e.name.toLowerCase().includes(q));
-
-  const visibleDepartments = departments.filter(deptMatchesQuery);
-
-  const visiblePositions = positions.filter(
-    (p) =>
-      (selectedDept === "all" || p.department === selectedDept) &&
-      (posFilter === "all" || p.title === posFilter) &&
-      posMatchesQuery(p),
-  );
-
-  const deptSort = useSort(visibleDepartments, {
-    name: (d: Department) => d.name,
-    head: (d: Department) => d.head,
-    staff: (d: Department) => d.staff,
-    positions: (d: Department) => positions.filter((p) => p.department === d.name).length,
-  });
-
-  const posSort = useSort(visiblePositions, {
-    title: (p: Position) => p.title,
-    department: (p: Position) => p.department,
-    level: (p: Position) => p.level,
-    headcount: (p: Position) => p.headcount,
-    filled: (p: Position) => p.filled,
-    vacant: (p: Position) => p.headcount - p.filled,
-  });
-
-  // ----- Requisitions tab derived data -----
-  const reqDeptOptions = Array.from(new Set(requisitions.map((r) => r.department))).sort();
-
-  const withinDateRange = (dateStr: string, range: string) => {
-    if (range === "all") return true;
-    const days = Number(range);
-    const diffDays = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
-    return diffDays <= days;
+    setEditingPos(null);
+    setIsNewPos(false);
   };
 
-  const rq = reqQuery.trim().toLowerCase();
-  const filteredRequisitions = requisitions.filter(
-    (r) =>
-      (reqDeptFilter === "all" || r.department === reqDeptFilter) &&
-      withinDateRange(r.requestedAt, reqDateFilter) &&
-      (!rq ||
-        r.id.toLowerCase().includes(rq) ||
-        r.position.toLowerCase().includes(rq) ||
-        r.department.toLowerCase().includes(rq) ||
-        r.status.toLowerCase().includes(rq)),
-  );
-
-  const reqSort = useSort(filteredRequisitions, {
-    id: (r) => r.id,
-    position: (r) => r.position,
-    department: (r) => r.department,
-    count: (r) => r.count,
-    urgency: (r) => r.urgency,
-    status: (r) => r.status,
-    requestedAt: (r) => r.requestedAt,
-  });
-
-  const reqTotalPages = Math.max(1, Math.ceil(reqSort.sorted.length / REQ_PAGE_SIZE));
-  const reqCurrentPage = Math.min(reqPage, reqTotalPages);
-  const reqPageRows = reqSort.sorted.slice(
-    (reqCurrentPage - 1) * REQ_PAGE_SIZE,
-    reqCurrentPage * REQ_PAGE_SIZE,
-  );
-
-  const deptPage = usePagination(deptSort.sorted);
-  const posPage = usePagination(posSort.sorted);
+  const setPosPosList = setPosList;
 
   return (
-    <div>
-      <PageHeader
-        eyebrow={role === "superadmin" ? "Super Admin · Core HR" : "Admin · Core HR"}
-        title="Core HCM"
-        description="Organization structure, departments, job positions, and roster transfers."
-      />
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Departments" value={departments.length} icon={Building2} tone="primary" />
-        <StatCard label="Total Headcount" value={totalStaff} icon={Users} tone="gold" />
-        <StatCard label="Job Positions" value={positions.length} icon={GitBranch} />
-        <StatCard label="Open Requisitions" value={totalReq} tone="caution" />
-      </div>
-
-      <Tabs defaultValue="org" className="mt-6">
-        <TabsList className="flex h-auto flex-wrap justify-start">
-          <TabsTrigger value="org">Organizational Chart</TabsTrigger>
-          <TabsTrigger value="dept-positions">Departments &amp; Positions</TabsTrigger>
-          <TabsTrigger value="employee-list">Employee List</TabsTrigger>
-          <TabsTrigger value="requisitions">Requisitions</TabsTrigger>
-        </TabsList>
-
-        {/* ORG CHART */}
-        <TabsContent value="org" className="mt-4">
-          <Card className="border-border/70">
-            <CardContent className="p-6">
-              <h2 className="font-display text-2xl font-semibold">Organizational Chart</h2>
-              <p className="text-xs text-muted-foreground">
-                Oxford Suites Makati reporting structure — General Manager down to line staff.
-              </p>
-              <div className="mt-8 overflow-x-auto pb-4">
-                <div className="mx-auto flex min-w-max justify-center px-6">
-                  <OrgTree node={orgChart} root onSelect={setOrgNode} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* EMPLOYEE LIST */}
-        <TabsContent value="employee-list" className="mt-4">
-          <EmployeeListTab />
-        </TabsContent>
-
-        {/* DEPARTMENTS & POSITIONS */}
-        <TabsContent value="dept-positions" className="mt-4 space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative w-full max-w-sm">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search department, position, or employee…"
-                className="pl-8"
-              />
-            </div>
-            <Select value={selectedDept} onValueChange={setSelectedDept}>
-              <SelectTrigger className="w-56">
-                <SelectValue placeholder="All departments" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All departments</SelectItem>
-                {departments.map((d) => (
-                  <SelectItem key={d.code} value={d.name}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={posFilter} onValueChange={setPosFilter}>
-              <SelectTrigger className="w-56">
-                <SelectValue placeholder="All positions" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All positions</SelectItem>
-                {positions.map((p) => (
-                  <SelectItem key={p.id} value={p.title}>
-                    {p.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="ml-auto flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => setCreateDeptOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" /> Create department
-              </Button>
-              <Button size="sm" onClick={() => setCreatePosOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" /> Create job position
-              </Button>
-            </div>
+    <div className="space-y-8">
+      {/* 1. DEPARTMENTS SECTION CARD */}
+      <Card className="border-border/70 shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 pb-4">
+          <div>
+            <CardTitle className="font-display text-xl font-semibold">Hotel &amp; Restaurant Departments</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Master department registry with dynamic staff aggregation from job positions.
+            </p>
           </div>
+          {/* ADD DEPARTMENT BUTTON ASSOCIATED DIRECTLY IN DEPARTMENT CARD */}
+          <Button
+            size="sm"
+            onClick={() => {
+              setDeptCode(`DEP-0${deptList.length + 1}`);
+              setDeptName("");
+              setDeptHead("");
+              setIsNewDept(true);
+              setEditingDept({ code: "", name: "", description: "", head: "", staff: 0, openRequisitions: 0, budget: 0 });
+            }}
+          >
+            <Plus className="mr-1.5 h-4 w-4" /> Add Department
+          </Button>
+        </CardHeader>
 
-          <div className="grid gap-4 xl:grid-cols-[1fr_1.4fr]">
-            {/* DEPARTMENT LIST */}
-            <Card className="border-border/70">
-              <CardContent className="p-5">
-                <h2 className="font-display text-xl font-semibold">Departments</h2>
-                <p className="text-xs text-muted-foreground">
-                  Select a department to view its job positions.
-                </p>
-                <div className="mt-3 overflow-x-auto rounded-md border border-border/70">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <SortHead sortKey="name" sort={deptSort.sort} onSort={deptSort.toggle}>
-                          Department
-                        </SortHead>
-                        <SortHead sortKey="head" sort={deptSort.sort} onSort={deptSort.toggle}>
-                          Head
-                        </SortHead>
-                        <SortHead
-                          sortKey="staff"
-                          sort={deptSort.sort}
-                          onSort={deptSort.toggle}
-                          align="right"
-                        >
-                          Staff
-                        </SortHead>
-                        <SortHead
-                          sortKey="positions"
-                          sort={deptSort.sort}
-                          onSort={deptSort.toggle}
-                          align="right"
-                        >
-                          Positions
-                        </SortHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {deptPage.pageItems.map((d) => (
-                        <TableRow
-                          key={d.code}
-                          onClick={() => setSelectedDept(d.name)}
-                          className={cn(
-                            "cursor-pointer",
-                            selectedDept === d.name && "bg-primary/5",
-                          )}
-                        >
-                          <TableCell>
-                            <p className="font-medium">{d.name}</p>
-                            <p className="text-xs text-muted-foreground">{d.description}</p>
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{d.head}</TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant="secondary">{d.staff}</Badge>
-                          </TableCell>
-                          <TableCell className="text-right text-sm text-muted-foreground">
-                            {positions.filter((p) => p.department === d.name).length}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditDept(d);
-                              }}
-                              className="text-xs font-medium text-primary hover:underline"
-                            >
-                              Edit
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {deptSort.sorted.length === 0 && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={5}
-                            className="py-6 text-center text-sm text-muted-foreground"
-                          >
-                            No departments match your search.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-                <TablePagination
-                  page={deptPage.page}
-                  pageCount={deptPage.pageCount}
-                  from={deptPage.from}
-                  to={deptPage.to}
-                  total={deptPage.total}
-                  label="departments"
-                  onPageChange={deptPage.setPage}
-                />
-              </CardContent>
-            </Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-28 pl-6">Dept Code</TableHead>
+                <TableHead>Department Name</TableHead>
+                <TableHead>Department Head</TableHead>
+                <TableHead className="text-center">Positions Count</TableHead>
+                <TableHead className="text-center">Staff Count (Derived)</TableHead>
+                <TableHead className="w-28 text-center pr-6">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {deptList.map((d) => {
+                const positionsUnder = posList.filter((p) => p.department === d.name);
+                const derivedStaff = getDerivedStaffCount(d.name);
 
-            {/* POSITIONS FOR SELECTED DEPARTMENT */}
-            <Card className="border-border/70">
-              <CardContent className="p-5">
-                <h2 className="font-display text-xl font-semibold">
-                  {selectedDept === "all" ? "Job Positions" : `${selectedDept} — Positions`}
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Expand a position to see the employees who hold it.
-                  {role !== "superadmin" && " Deletion is restricted to Super Admin."}
-                </p>
+                return (
+                  <TableRow key={d.code}>
+                    <TableCell className="pl-6 font-mono text-xs font-medium">{d.code}</TableCell>
+                    <TableCell className="font-medium">{d.name}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{d.head}</TableCell>
+                    <TableCell className="text-center font-mono text-xs">{positionsUnder.length}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant="secondary" className="font-mono text-xs">
+                        {derivedStaff} active staff
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center pr-6">
+                      <div className="flex justify-center">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => {
+                            setEditingDept(d);
+                            setDeptCode(d.code);
+                            setDeptName(d.name);
+                            setDeptHead(d.head);
+                            setIsNewDept(false);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
-                <div className="mt-3 overflow-x-auto rounded-md border border-border/70">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <SortHead sortKey="title" sort={posSort.sort} onSort={posSort.toggle}>
-                          Position
-                        </SortHead>
-                        <SortHead sortKey="department" sort={posSort.sort} onSort={posSort.toggle}>
-                          Department
-                        </SortHead>
-                        <SortHead sortKey="level" sort={posSort.sort} onSort={posSort.toggle}>
-                          Level
-                        </SortHead>
-                        <SortHead
-                          sortKey="headcount"
-                          sort={posSort.sort}
-                          onSort={posSort.toggle}
-                          align="right"
-                        >
-                          Headcount
-                        </SortHead>
-                        <SortHead
-                          sortKey="vacant"
-                          sort={posSort.sort}
-                          onSort={posSort.toggle}
-                          align="right"
-                        >
-                          Status
-                        </SortHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {posPage.pageItems.map((p) => {
-                        const vacant = p.headcount - p.filled;
-                        const requested = requisitions.some((r) => r.position === p.title);
-                        const members = membersOf(p.title);
-                        const isOpen = openPositionId === p.id;
-                        return (
-                          <>
-                            <TableRow
-                              key={p.id}
-                              className="cursor-pointer"
-                              onClick={() => setOpenPositionId(isOpen ? null : p.id)}
-                            >
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <ChevronDown
-                                    className={cn(
-                                      "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-                                      isOpen && "rotate-180",
-                                    )}
-                                  />
-                                  <span className="truncate text-sm font-medium">{p.title}</span>
-                                </div>
-                                <p className="ml-5 text-xs text-muted-foreground">{p.salaryBand}</p>
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground">
-                                {p.department}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="text-[0.65rem]">
-                                  {p.level}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <div className="ml-auto w-28">
-                                  <Progress
-                                    value={(p.filled / p.headcount) * 100}
-                                    className="h-2"
-                                  />
-                                  <p className="mt-1 text-[0.65rem] text-muted-foreground">
-                                    {p.filled} of {p.headcount}
-                                  </p>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    vacant > 0
-                                      ? "border-caution/30 bg-caution/15 text-caution"
-                                      : "border-success/30 bg-success/15 text-success"
-                                  }
-                                >
-                                  {vacant > 0 ? `${vacant} to fill` : "Fully staffed"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell
-                                className="text-right"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <div className="flex shrink-0 items-center justify-end gap-1.5">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={vacant === 0 || requested}
-                                    onClick={() => {
-                                      setRequestFor(p);
-                                      setReqForm({
-                                        count: vacant,
-                                        urgency: "Normal",
-                                        justification: "",
-                                      });
-                                    }}
-                                  >
-                                    <Send className="mr-1.5 h-3.5 w-3.5" />
-                                    {requested ? "Requested" : "Request vacancy"}
-                                  </Button>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    title={
-                                      role === "superadmin" ? "Delete position" : "Super Admin only"
-                                    }
-                                    onClick={() => deletePosition(p.id)}
-                                  >
-                                    <Trash2
-                                      className={
-                                        role === "superadmin"
-                                          ? "h-4 w-4 text-destructive"
-                                          : "h-4 w-4 text-muted-foreground"
-                                      }
-                                    />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                            {isOpen && (
-                              <TableRow key={`${p.id}-members`}>
-                                <TableCell colSpan={6} className="bg-muted/30 px-4 py-3">
-                                  <p className="eyebrow">Members ({members.length})</p>
-                                  {members.length > 0 ? (
-                                    <ul className="mt-2 space-y-1.5">
-                                      {members.map((e) => (
-                                        <li
-                                          key={e.id}
-                                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-border/60 bg-card px-2.5 py-1.5 text-xs sm:flex sm:flex-wrap"
-                                        >
-                                          <div className="flex min-w-0 items-center gap-2 sm:w-52">
-                                            <Avatar className="h-6 w-6 shrink-0">
-                                              <AvatarFallback className="bg-primary/10 text-[0.6rem] text-primary">
-                                                {initialsOf(e.name)}
-                                              </AvatarFallback>
-                                            </Avatar>
-                                            <span className="truncate font-medium">{e.name}</span>
-                                          </div>
-                                          <span className="text-muted-foreground sm:w-24">
-                                            {e.id}
-                                          </span>
-                                          <span className="truncate text-muted-foreground sm:w-32">
-                                            {e.department}
-                                          </span>
-                                          <span className="truncate text-muted-foreground sm:w-40">
-                                            {e.position}
-                                          </span>
-                                          <Badge
-                                            variant="outline"
-                                            className="shrink-0 text-[0.6rem]"
-                                          >
-                                            {e.employmentType} {e.status}
-                                          </Badge>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-7 shrink-0 px-2 text-[0.7rem] sm:ml-auto"
-                                            onClick={() => {
-                                              setTransferEmployee(e);
-                                              setTransfer({ department: "", date: "2026-08-16" });
-                                            }}
-                                          >
-                                            <ArrowLeftRight className="mr-1.5 h-3 w-3" /> Transfer
-                                          </Button>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <p className="mt-2 text-xs text-muted-foreground">
-                                      No employees currently hold this position.
-                                    </p>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </>
-                        );
-                      })}
-                      {posSort.sorted.length === 0 && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={6}
-                            className="py-6 text-center text-sm text-muted-foreground"
-                          >
-                            No positions match your filters.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-                <TablePagination
-                  page={posPage.page}
-                  pageCount={posPage.pageCount}
-                  from={posPage.from}
-                  to={posPage.to}
-                  total={posPage.total}
-                  label="positions"
-                  onPageChange={posPage.setPage}
-                />
-              </CardContent>
-            </Card>
+      {/* 2. POSITIONS SECTION CARD */}
+      <Card className="border-border/70 shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 pb-4">
+          <div>
+            <CardTitle className="font-display text-xl font-semibold">Job Positions &amp; Salary Bands</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Define position titles, department assignments, headcount targets, and assigned salary grade structure.
+            </p>
           </div>
-        </TabsContent>
+          {/* ADD POSITION BUTTON ASSOCIATED DIRECTLY IN POSITION CARD */}
+          <Button
+            size="sm"
+            onClick={() => {
+              setPosTitle("");
+              setPosDept(deptList[0]?.name || "Front Office");
+              setPosLevel("Rank & File");
+              setPosTarget("5");
+              setPosFilled("3");
+              setPosSGrade("SG-05");
+              setIsNewPos(true);
+              setEditingPos({ id: "", title: "", department: "", level: "Rank & File", headcount: 5, filled: 3, salaryBand: "" });
+            }}
+          >
+            <Plus className="mr-1.5 h-4 w-4" /> Add Position
+          </Button>
+        </CardHeader>
 
-        {/* REQUISITIONS */}
-        <TabsContent value="requisitions" className="mt-4 space-y-4">
-          <Card className="border-border/70">
-            <CardContent className="p-5">
-              <h2 className="font-display text-xl font-semibold">Requisitions</h2>
-              <p className="text-xs text-muted-foreground">
-                All open and historical vacancy requisitions submitted for approval.
-              </p>
-
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Select
-                  value={reqDeptFilter}
-                  onValueChange={(v) => {
-                    setReqDeptFilter(v);
-                    setReqPage(1);
-                  }}
-                >
-                  <SelectTrigger className="w-52">
-                    <SelectValue placeholder="All departments" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All departments</SelectItem>
-                    {reqDeptOptions.map((d) => (
-                      <SelectItem key={d} value={d}>
-                        {d}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={reqDateFilter}
-                  onValueChange={(v) => {
-                    setReqDateFilter(v);
-                    setReqPage(1);
-                  }}
-                >
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="All time" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All time</SelectItem>
-                    <SelectItem value="7">Last 7 days</SelectItem>
-                    <SelectItem value="30">Last 30 days</SelectItem>
-                    <SelectItem value="90">Last 90 days</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="relative ml-auto w-full max-w-sm">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={reqQuery}
-                    onChange={(e) => {
-                      setReqQuery(e.target.value);
-                      setReqPage(1);
-                    }}
-                    placeholder="Search requisition, position, department…"
-                    className="pl-8"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-4 overflow-x-auto rounded-md border border-border/70">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <SortHead sortKey="id" sort={reqSort.sort} onSort={reqSort.toggle}>
-                        ID
-                      </SortHead>
-                      <SortHead sortKey="position" sort={reqSort.sort} onSort={reqSort.toggle}>
-                        Position
-                      </SortHead>
-                      <SortHead sortKey="department" sort={reqSort.sort} onSort={reqSort.toggle}>
-                        Department
-                      </SortHead>
-                      <SortHead
-                        sortKey="count"
-                        sort={reqSort.sort}
-                        onSort={reqSort.toggle}
-                        align="right"
-                      >
-                        Openings
-                      </SortHead>
-                      <SortHead sortKey="urgency" sort={reqSort.sort} onSort={reqSort.toggle}>
-                        Urgency
-                      </SortHead>
-                      <SortHead sortKey="status" sort={reqSort.sort} onSort={reqSort.toggle}>
-                        Status
-                      </SortHead>
-                      <SortHead sortKey="requestedAt" sort={reqSort.sort} onSort={reqSort.toggle}>
-                        Requested
-                      </SortHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reqPageRows.map((r) => (
-                      <TableRow key={r.id}>
-                        <TableCell className="font-medium">{r.id}</TableCell>
-                        <TableCell>{r.position}</TableCell>
-                        <TableCell className="text-muted-foreground">{r.department}</TableCell>
-                        <TableCell className="text-right">{r.count}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              r.urgency === "Urgent" || r.urgency === "High"
-                                ? "border-caution/30 bg-caution/15 text-caution"
-                                : "border-border text-muted-foreground"
-                            }
-                          >
-                            {r.urgency}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              r.status === "Approved"
-                                ? "border-success/30 bg-success/15 text-success"
-                                : r.status === "Converted"
-                                  ? "border-primary/30 bg-primary/10 text-primary"
-                                  : "border-border text-muted-foreground"
-                            }
-                          >
-                            {r.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{r.requestedAt}</TableCell>
-                      </TableRow>
-                    ))}
-                    {reqPageRows.length === 0 && (
-                      <TableRow>
-                        <TableCell
-                          colSpan={7}
-                          className="py-6 text-center text-sm text-muted-foreground"
-                        >
-                          No requisitions match your filters.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
-              <TablePagination
-                page={reqCurrentPage}
-                pageCount={reqTotalPages}
-                from={reqSort.sorted.length === 0 ? 0 : (reqCurrentPage - 1) * REQ_PAGE_SIZE + 1}
-                to={Math.min(reqCurrentPage * REQ_PAGE_SIZE, reqSort.sorted.length)}
-                total={reqSort.sorted.length}
-                label="requisitions"
-                onPageChange={setReqPage}
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* CREATE DEPARTMENT */}
-      <Dialog open={createDeptOpen} onOpenChange={setCreateDeptOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Create Department</DialogTitle>
-            <DialogDescription>Adds a new department to the property structure.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label>Department name</Label>
-              <Input
-                value={deptForm.name}
-                onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
-                placeholder="e.g. Banquet & Events"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Textarea
-                rows={3}
-                value={deptForm.description}
-                onChange={(e) => setDeptForm({ ...deptForm, description: e.target.value })}
-                placeholder="Scope of the department…"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Department head</Label>
-              <Select
-                value={deptForm.head}
-                onValueChange={(v) => setDeptForm({ ...deptForm, head: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Assign a head" />
+        <CardContent className="p-6 space-y-4">
+          {/* FILTER DROPDOWN: DEFAULTS TO ALL DEPARTMENTS & ALL POSITIONS */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Filtered Position Roster
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Filter by Dept:</span>
+              <Select value={deptFilter} onValueChange={setDeptFilter}>
+                <SelectTrigger className="h-9 w-52 text-xs bg-card">
+                  <SelectValue placeholder="All departments" />
                 </SelectTrigger>
                 <SelectContent>
-                  {employees.map((e) => (
-                    <SelectItem key={e.id} value={e.name}>
-                      {e.name} — {e.position}
+                  <SelectItem value="all">All departments</SelectItem>
+                  {deptList.map((d) => (
+                    <SelectItem key={d.code} value={d.name}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-24">POS ID</TableHead>
+                  <TableHead>Job Position Title</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Level</TableHead>
+                  <TableHead className="text-center">Target Headcount</TableHead>
+                  <TableHead className="text-center">Filled Staff</TableHead>
+                  <TableHead>Assigned Salary Grade / Band</TableHead>
+                  <TableHead className="w-28 text-center pr-4">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredPositions.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-mono text-xs font-medium">{p.id}</TableCell>
+                    <TableCell className="font-medium">{p.title}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{p.department}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-[11px]">
+                        {p.level}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center font-mono text-xs">{p.headcount}</TableCell>
+                    <TableCell className="text-center font-mono text-xs font-semibold">{p.filled}</TableCell>
+                    <TableCell className="text-xs text-primary font-medium">{p.salaryBand}</TableCell>
+                    <TableCell className="text-center pr-4">
+                      <div className="flex justify-center">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => {
+                            setEditingPos(p);
+                            setPosTitle(p.title);
+                            setPosDept(p.department);
+                            setPosLevel(p.level);
+                            setPosTarget(String(p.headcount));
+                            setPosFilled(String(p.filled));
+                            setPosSGrade(p.salaryBand.split(" ")[0] || "SG-05");
+                            setIsNewPos(false);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* EDIT / ADD DEPARTMENT MODAL WITH DYNAMIC POSITIONS & DERIVED STAFF */}
+      <Dialog
+        open={!!editingDept}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingUnsavedExit({ target: "dept" });
+          } else {
+            setEditingDept(editingDept);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{isNewDept ? "Add New Department" : `Edit Department — ${editingDept?.name}`}</DialogTitle>
+            <DialogDescription>
+              Configure department information. Associated positions and staff count are updated automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Department Code</Label>
+                <Input value={deptCode} onChange={(e) => setDeptCode(e.target.value)} className="text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Department Name</Label>
+                <Input value={deptName} onChange={(e) => setDeptName(e.target.value)} className="text-xs" />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Department Head (Active Staff Only)</Label>
+              <Select value={deptHead} onValueChange={setDeptHead}>
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="Select active manager/supervisor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {candidateHeads.map((h) => (
+                    <SelectItem key={h.id} value={h.name}>
+                      {h.name} ({h.position} · {h.department})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Annual budget (₱)</Label>
-              <Input
-                type="number"
-                value={deptForm.budget}
-                onChange={(e) => setDeptForm({ ...deptForm, budget: e.target.value })}
-                placeholder="2500000"
-              />
+
+            {/* DYNAMIC ASSOCIATED POSITIONS LISTING */}
+            <div className="space-y-1.5 rounded-lg border p-3 bg-muted/20">
+              <Label className="text-xs font-semibold">Associated Job Positions in {deptName || "Department"}:</Label>
+              {posList.filter((p) => p.department === deptName).length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {posList
+                    .filter((p) => p.department === deptName)
+                    .map((p) => (
+                      <Badge key={p.id} variant="secondary" className="text-[11px]">
+                        {p.title} ({p.filled} staff)
+                      </Badge>
+                    ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground italic text-[11px]">
+                  No job positions currently assigned. Positions added to this department will display here automatically.
+                </p>
+              )}
+            </div>
+
+            {/* DERIVED STAFF COUNT (READ ONLY) */}
+            <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/40">
+              <div>
+                <span className="font-semibold text-xs text-foreground">Total Staff Count (Derived):</span>
+                <p className="text-[11px] text-muted-foreground">Calculated automatically from filled staff across all positions.</p>
+              </div>
+              <Badge variant="default" className="font-mono text-sm">
+                {getDerivedStaffCount(deptName)} Staff
+              </Badge>
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateDeptOpen(false)}>
+            <Button variant="outline" onClick={() => setPendingUnsavedExit({ target: "dept" })}>
               Cancel
             </Button>
-            <Button
-              onClick={() => {
-                if (!deptForm.name || !deptForm.head) {
-                  toast.error("Department name and head are required.");
-                  return;
-                }
-                setDepartments((prev) => [
-                  ...prev,
-                  {
-                    code: `DEP-${deptForm.name.slice(0, 2).toUpperCase()}`,
-                    name: deptForm.name,
-                    description: deptForm.description || "Newly created department.",
-                    head: deptForm.head,
-                    staff: 0,
-                    openRequisitions: 0,
-                    budget: Number(deptForm.budget) || 0,
-                  },
-                ]);
-                toast.success(`${deptForm.name} department created`);
-                setDeptForm({ name: "", description: "", head: "", budget: "" });
-                setCreateDeptOpen(false);
-              }}
-            >
-              Create
+            <Button onClick={() => setPendingConfirmSave({ type: "dept" })}>
+              Save Department
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* EDIT DEPARTMENT */}
-      <Dialog open={!!editDept} onOpenChange={(o) => !o && setEditDept(null)}>
-        <DialogContent>
-          {editDept && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="font-display text-2xl">Edit {editDept.name}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label>Department name</Label>
-                  <Input
-                    value={editDept.name}
-                    onChange={(e) => setEditDept({ ...editDept, name: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Textarea
-                    rows={3}
-                    value={editDept.description}
-                    onChange={(e) => setEditDept({ ...editDept, description: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Department head</Label>
-                  <Select
-                    value={editDept.head}
-                    onValueChange={(v) => setEditDept({ ...editDept, head: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {employees.map((e) => (
-                        <SelectItem key={e.id} value={e.name}>
-                          {e.name} — {e.position}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Staff count</Label>
-                    <Input
-                      type="number"
-                      value={editDept.staff}
-                      onChange={(e) =>
-                        setEditDept({ ...editDept, staff: Number(e.target.value) || 0 })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Annual budget (₱)</Label>
-                    <Input
-                      type="number"
-                      value={editDept.budget}
-                      onChange={(e) =>
-                        setEditDept({ ...editDept, budget: Number(e.target.value) || 0 })
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setEditDept(null)}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    setDepartments((prev) =>
-                      prev.map((d) => (d.code === editDept.code ? editDept : d)),
-                    );
-                    toast.success(`${editDept.name} updated`);
-                    setEditDept(null);
-                  }}
-                >
-                  Save changes
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* ORG NODE DETAILS */}
-      <Dialog open={!!orgNode} onOpenChange={(o) => !o && setOrgNode(null)}>
-        <DialogContent>
-          {orgNode && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="font-display text-2xl">{orgNode.name}</DialogTitle>
-                <DialogDescription>{orgNode.title}</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-                  <span className="text-muted-foreground">Direct reports</span>
-                  <span className="font-medium">{orgNode.children?.length ?? 0}</span>
-                </div>
-                {(orgNode.children ?? []).length > 0 && (
-                  <div className="rounded-md border border-border p-3">
-                    <p className="eyebrow mb-2">Reports to {orgNode.name}</p>
-                    <ul className="space-y-1.5">
-                      {(orgNode.children ?? []).map((c) => (
-                        <li key={c.name} className="flex items-center gap-2 text-xs">
-                          <Avatar className="h-6 w-6">
-                            <AvatarFallback className="bg-secondary text-[0.6rem]">
-                              {initialsOf(c.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="font-medium">{c.name}</span>
-                          <span className="text-muted-foreground">— {c.title}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setOrgNode(null)}>
-                  Close
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* TRANSFER EMPLOYEE */}
-      <Dialog open={!!transferEmployee} onOpenChange={(o) => !o && setTransferEmployee(null)}>
-        <DialogContent>
-          {transferEmployee && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="font-display text-2xl">
-                  Transfer {transferEmployee.name}
-                </DialogTitle>
-                <DialogDescription>
-                  Currently in {transferEmployee.department} · {transferEmployee.position}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label>New department</Label>
-                  <Select
-                    value={transfer.department}
-                    onValueChange={(v) => setTransfer({ ...transfer, department: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select department" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {departments
-                        .filter((d) => d.name !== transferEmployee.department)
-                        .map((d) => (
-                          <SelectItem key={d.code} value={d.name}>
-                            {d.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Effective date</Label>
-                  <Input
-                    type="date"
-                    value={transfer.date}
-                    onChange={(e) => setTransfer({ ...transfer, date: e.target.value })}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setTransferEmployee(null)}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    if (!transfer.department) {
-                      toast.error("Select a destination department.");
-                      return;
-                    }
-                    toast.success(
-                      `${transferEmployee.name} transferred to ${transfer.department} effective ${transfer.date}`,
-                    );
-                    setTransferEmployee(null);
-                  }}
-                >
-                  Confirm transfer
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* CREATE POSITION */}
-      <Dialog open={createPosOpen} onOpenChange={setCreatePosOpen}>
-        <DialogContent>
+      {/* EDIT / ADD POSITION MODAL WITH SALARY GRADE SELECTOR */}
+      <Dialog
+        open={!!editingPos}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingUnsavedExit({ target: "pos" });
+          } else {
+            setEditingPos(editingPos);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Create Job Position</DialogTitle>
+            <DialogTitle>{isNewPos ? "Add New Job Position" : `Edit Position — ${editingPos?.title}`}</DialogTitle>
+            <DialogDescription>
+              Assign job level, target headcount, department and dynamic Salary Grade.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label>Position title</Label>
-              <Input
-                value={posForm.title}
-                onChange={(e) => setPosForm({ ...posForm, title: e.target.value })}
-                placeholder="e.g. Banquet Server"
-              />
+
+          <div className="space-y-4 py-2 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs">Job Position Title</Label>
+              <Input value={posTitle} onChange={(e) => setPosTitle(e.target.value)} className="text-xs" placeholder="e.g. Pastry Chef" />
             </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Department</Label>
-                <Select
-                  value={posForm.department}
-                  onValueChange={(v) => setPosForm({ ...posForm, department: v })}
-                >
-                  <SelectTrigger>
+              <div className="space-y-1">
+                <Label className="text-xs">Department</Label>
+                <Select value={posDept} onValueChange={setPosDept}>
+                  <SelectTrigger className="text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {departments.map((d) => (
-                      <SelectItem key={d.code} value={d.name}>
-                        {d.name}
-                      </SelectItem>
+                    {deptList.map((d) => (
+                      <SelectItem key={d.code} value={d.name}>{d.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Level</Label>
-                <Select
-                  value={posForm.level}
-                  onValueChange={(v) => setPosForm({ ...posForm, level: v })}
-                >
-                  <SelectTrigger>
+              <div className="space-y-1">
+                <Label className="text-xs">Job Level</Label>
+                <Select value={posLevel} onValueChange={(v: any) => setPosLevel(v)}>
+                  <SelectTrigger className="text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {["Rank & File", "Supervisory", "Managerial", "Executive"].map((l) => (
-                      <SelectItem key={l} value={l}>
-                        {l}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="Rank & File">Rank &amp; File</SelectItem>
+                    <SelectItem value="Supervisory">Supervisory</SelectItem>
+                    <SelectItem value="Managerial">Managerial</SelectItem>
+                    <SelectItem value="Executive">Executive</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Approved headcount</Label>
-                <Input
-                  type="number"
-                  value={posForm.headcount}
-                  onChange={(e) =>
-                    setPosForm({ ...posForm, headcount: Number(e.target.value) || 1 })
-                  }
-                />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Target Headcount</Label>
+                <Input type="number" value={posTarget} onChange={(e) => setPosTarget(e.target.value)} className="text-xs" />
               </div>
-              <div className="space-y-2">
-                <Label>Salary band</Label>
-                <Input
-                  value={posForm.salaryBand}
-                  onChange={(e) => setPosForm({ ...posForm, salaryBand: e.target.value })}
-                  placeholder="₱16,000 – ₱19,000"
-                />
+              <div className="space-y-1">
+                <Label className="text-xs">Filled Staff</Label>
+                <Input type="number" value={posFilled} onChange={(e) => setPosFilled(e.target.value)} className="text-xs" />
               </div>
+            </div>
+
+            {/* DYNAMIC SALARY GRADE SELECTION DROPDOWN */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-primary">Assign Salary Grade (From Salary Grade Management)</Label>
+              <Select value={posSGrade} onValueChange={setPosSGrade}>
+                <SelectTrigger className="text-xs border-primary/40 bg-primary/5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {sGrades.map((sg) => (
+                    <SelectItem key={sg.id} value={sg.code}>
+                      {sg.code} — {sg.title} ({formatMoney(sg.minSalary)} – {formatMoney(sg.maxSalary)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreatePosOpen(false)}>
+            <Button variant="outline" onClick={() => setPendingUnsavedExit({ target: "pos" })}>
               Cancel
             </Button>
-            <Button
-              onClick={() => {
-                if (!posForm.title) {
-                  toast.error("Position title is required.");
-                  return;
-                }
-                setPositions((prev) => [
-                  ...prev,
-                  {
-                    id: `POS-${String(prev.length + 1).padStart(3, "0")}`,
-                    title: posForm.title,
-                    department: posForm.department,
-                    level: posForm.level as Position["level"],
-                    headcount: posForm.headcount,
-                    filled: 0,
-                    salaryBand: posForm.salaryBand || "To be defined",
-                  },
-                ]);
-                toast.success(`${posForm.title} created`);
-                setPosForm({
-                  title: "",
-                  department: departments[0]!.name,
-                  level: "Rank & File",
-                  headcount: 1,
-                  salaryBand: "",
-                });
-                setCreatePosOpen(false);
-              }}
-            >
-              Create
+            <Button onClick={() => setPendingConfirmSave({ type: "pos" })}>
+              Save Position
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* REQUEST VACANCY */}
-      <Dialog open={!!requestFor} onOpenChange={(o) => !o && setRequestFor(null)}>
-        <DialogContent>
-          {requestFor && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="font-display text-2xl">Request Vacancy</DialogTitle>
-                <DialogDescription>
-                  {requestFor.title} · {requestFor.department} ·{" "}
-                  {requestFor.headcount - requestFor.filled} seat(s) unfilled
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Openings requested</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={requestFor.headcount - requestFor.filled}
-                      value={reqForm.count}
-                      onChange={(e) =>
-                        setReqForm({ ...reqForm, count: Number(e.target.value) || 1 })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Urgency</Label>
-                    <Select
-                      value={reqForm.urgency}
-                      onValueChange={(v) => setReqForm({ ...reqForm, urgency: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["Normal", "High", "Urgent"].map((u) => (
-                          <SelectItem key={u} value={u}>
-                            {u}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Justification</Label>
-                  <Textarea
-                    rows={3}
-                    value={reqForm.justification}
-                    onChange={(e) => setReqForm({ ...reqForm, justification: e.target.value })}
-                    placeholder="Reason for the additional headcount…"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setRequestFor(null)}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    requisitionStore.add({
-                      id: `REQ-${1000 + requisitions.length + 1}`,
-                      position: requestFor.title,
-                      department: requestFor.department,
-                      count: reqForm.count,
-                      urgency: reqForm.urgency,
-                      justification: reqForm.justification,
-                      status: "Pending",
-                      requestedAt: new Date().toISOString().slice(0, 10),
-                    });
-                    toast.success("Vacancy requisition submitted to Recruitment Management", {
-                      description: `${requestFor.title} · ${reqForm.count} opening(s)`,
-                    });
-                    setRequestFor(null);
-                  }}
-                >
-                  Submit request
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* CONFIRMATION ALERT DIALOG (SAVE DEPT / SAVE POS) */}
+      <AlertDialog open={!!pendingConfirmSave} onOpenChange={(open) => !open && setPendingConfirmSave(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingConfirmSave?.type === "dept" && `Are you sure you want to save changes to department "${deptName}"?`}
+              {pendingConfirmSave?.type === "pos" && `Are you sure you want to save changes to position "${posTitle}"?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingConfirmSave(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingConfirmSave?.type === "dept") executeSaveDepartment();
+                if (pendingConfirmSave?.type === "pos") executeSavePosition();
+                setPendingConfirmSave(null);
+              }}
+            >
+              Yes, Save Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* CONFIRMATION ALERT DIALOG (UNSAVED CHANGES EXIT) */}
+      <AlertDialog open={!!pendingUnsavedExit} onOpenChange={(open) => !open && setPendingUnsavedExit(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-amber-600">Discard Unsaved Changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have modified fields in this modal. Are you sure you want to exit without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingUnsavedExit(null)}>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingUnsavedExit?.target === "dept") {
+                  setEditingDept(null);
+                  setIsNewDept(false);
+                }
+                if (pendingUnsavedExit?.target === "pos") {
+                  setEditingPos(null);
+                  setIsNewPos(false);
+                }
+                setPendingUnsavedExit(null);
+              }}
+            >
+              Discard &amp; Close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
+}
+
+/* --- Salary Grade Manager Sub-Component --- */
+function SalaryGradeManager() {
+  const [grades, setGrades] = useState<SalaryGrade[]>(seedSalaryGrades);
+  const [editingSG, setEditingSG] = useState<SalaryGrade | null>(null);
+  const [isNewSG, setIsNewSG] = useState(false);
+
+  // Form states
+  const [sgCode, setSgCode] = useState("");
+  const [sgTitle, setSgTitle] = useState("");
+  const [sgMin, setSgMin] = useState("20000");
+  const [sgMax, setSgMax] = useState("28000");
+  const [sgLevel, setSgLevel] = useState<SalaryGrade["level"]>("Rank & File");
+  const [sgNotes, setSgNotes] = useState("");
+
+  // Confirmation Alert States
+  const [pendingConfirmSave, setPendingConfirmSave] = useState(false);
+  const [pendingDeleteSG, setPendingDeleteSG] = useState<SalaryGrade | null>(null);
+
+  const executeSaveGrade = () => {
+    if (!sgCode || !sgTitle) {
+      toast.error("Salary Grade Code and Title are required.");
+      return;
+    }
+
+    if (isNewSG) {
+      const newSG: SalaryGrade = {
+        id: sgCode,
+        code: sgCode,
+        title: sgTitle,
+        minSalary: Number(sgMin) || 18000,
+        maxSalary: Number(sgMax) || 25000,
+        currency: "PHP",
+        level: sgLevel,
+        notes: sgNotes,
+      };
+      setGrades((prev) => [...prev, newSG]);
+      toast.success(`Salary Grade ${sgCode} created.`);
+    } else if (editingSG) {
+      setGrades((prev) =>
+        prev.map((g) =>
+          g.id === editingSG.id
+            ? {
+                ...g,
+                code: sgCode,
+                title: sgTitle,
+                minSalary: Number(sgMin),
+                maxSalary: Number(sgMax),
+                level: sgLevel,
+                notes: sgNotes,
+              }
+            : g
+        )
+      );
+      toast.success(`Salary Grade ${sgCode} updated.`);
+    }
+
+    setEditingSG(null);
+    setIsNewSG(false);
+  };
+
+  const executeDeleteGrade = (sg: SalaryGrade) => {
+    setGrades((prev) => prev.filter((g) => g.id !== sg.id));
+    toast.success(`Salary Grade ${sg.code} deleted.`);
+  };
+
+  return (
+    <Card className="border-border/70 shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 pb-4">
+        <div>
+          <CardTitle className="font-display text-xl font-semibold">Salary Grade &amp; Compensation Management</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Configure dynamic salary grades, pay band ranges, and job level alignment.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => {
+            setSgCode(`SG-${grades.length + 10}`);
+            setSgTitle("New Grade Level");
+            setSgMin("25000");
+            setSgMax("35000");
+            setSgLevel("Supervisory");
+            setSgNotes("");
+            setIsNewSG(true);
+            setEditingSG({ id: "", code: "", title: "", minSalary: 25000, maxSalary: 35000, currency: "PHP", level: "Supervisory" });
+          }}
+        >
+          <Plus className="mr-1.5 h-4 w-4" /> Add Salary Grade
+        </Button>
+      </CardHeader>
+
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-28 pl-6">Grade Code</TableHead>
+              <TableHead>Band Title</TableHead>
+              <TableHead>Job Level</TableHead>
+              <TableHead className="text-right">Min Salary</TableHead>
+              <TableHead className="text-right">Max Salary</TableHead>
+              <TableHead>Pay Band Range</TableHead>
+              <TableHead className="w-28 text-center pr-6">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {grades.map((sg) => (
+              <TableRow key={sg.id}>
+                <TableCell className="pl-6 font-mono text-xs font-semibold text-primary">{sg.code}</TableCell>
+                <TableCell className="font-medium text-xs">{sg.title}</TableCell>
+                <TableCell>
+                  <Badge variant="outline" className="text-[11px]">
+                    {sg.level}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right font-mono text-xs">{formatMoney(sg.minSalary)}</TableCell>
+                <TableCell className="text-right font-mono text-xs">{formatMoney(sg.maxSalary)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {formatMoney(sg.minSalary)} – {formatMoney(sg.maxSalary)}
+                </TableCell>
+                <TableCell className="text-center pr-6">
+                  <div className="flex justify-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-2.5 text-xs"
+                      onClick={() => {
+                        setEditingSG(sg);
+                        setSgCode(sg.code);
+                        setSgTitle(sg.title);
+                        setSgMin(String(sg.minSalary));
+                        setSgMax(String(sg.maxSalary));
+                        setSgLevel(sg.level);
+                        setSgNotes(sg.notes || "");
+                        setIsNewSG(false);
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-destructive hover:bg-destructive/10"
+                      onClick={() => setPendingDeleteSG(sg)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+
+      {/* EDIT / ADD SALARY GRADE MODAL */}
+      <Dialog open={!!editingSG} onOpenChange={(open) => !open && setEditingSG(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{isNewSG ? "Create Salary Grade" : `Edit Salary Grade — ${editingSG?.code}`}</DialogTitle>
+            <DialogDescription>Define compensation ranges for positions.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Grade Code</Label>
+                <Input value={sgCode} onChange={(e) => setSgCode(e.target.value)} className="text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Job Level Alignment</Label>
+                <Select value={sgLevel} onValueChange={(v: any) => setSgLevel(v)}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Rank & File">Rank &amp; File</SelectItem>
+                    <SelectItem value="Supervisory">Supervisory</SelectItem>
+                    <SelectItem value="Managerial">Managerial</SelectItem>
+                    <SelectItem value="Executive">Executive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Pay Band Title</Label>
+              <Input value={sgTitle} onChange={(e) => setSgTitle(e.target.value)} className="text-xs" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Minimum Monthly Salary (₱)</Label>
+                <Input type="number" value={sgMin} onChange={(e) => setSgMin(e.target.value)} className="text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Maximum Monthly Salary (₱)</Label>
+                <Input type="number" value={sgMax} onChange={(e) => setSgMax(e.target.value)} className="text-xs" />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Notes / Coverage</Label>
+              <Textarea value={sgNotes} onChange={(e) => setSgNotes(e.target.value)} rows={2} className="text-xs" />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingSG(null)}>
+              Cancel
+            </Button>
+            <Button onClick={() => setPendingConfirmSave(true)}>
+              Save Salary Grade
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CONFIRMATION SAVE SALARY GRADE */}
+      <AlertDialog open={pendingConfirmSave} onOpenChange={setPendingConfirmSave}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save Salary Grade Changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to save salary grade "{sgCode}" ({formatMoney(Number(sgMin))} – {formatMoney(Number(sgMax))})?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingConfirmSave(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                executeSaveGrade();
+                setPendingConfirmSave(false);
+              }}
+            >
+              Yes, Save Grade
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* CONFIRMATION DELETE SALARY GRADE */}
+      <AlertDialog open={!!pendingDeleteSG} onOpenChange={(open) => !open && setPendingDeleteSG(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">Delete Salary Grade?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete salary grade "{pendingDeleteSG?.code}"? Positions assigned to this grade will need to be re-assigned.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingDeleteSG(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingDeleteSG) executeDeleteGrade(pendingDeleteSG);
+                setPendingDeleteSG(null);
+              }}
+            >
+              Delete Grade
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
+  );
+}
+
+/* --- Requisition Manager Sub-Component --- */
+function RequisitionManager() {
+  const reqs = useRequisitions();
+
+  return (
+    <Card className="border-border/70 shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 pb-4">
+        <div>
+          <CardTitle className="font-display text-xl font-semibold">Vacancy Requisitions</CardTitle>
+          <p className="text-xs text-muted-foreground">Department requests for staff expansion or replacement hiring.</p>
+        </div>
+      </CardHeader>
+
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="pl-6">Req Code</TableHead>
+              <TableHead>Position Title</TableHead>
+              <TableHead>Department</TableHead>
+              <TableHead className="text-center">Slots Requested</TableHead>
+              <TableHead>Urgency</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right pr-6">Date Requested</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {reqs.map((r) => (
+              <TableRow key={r.id}>
+                <TableCell className="pl-6 font-mono text-xs font-medium">{r.id}</TableCell>
+                <TableCell className="font-medium text-xs">{r.position}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{r.department}</TableCell>
+                <TableCell className="text-center font-mono text-xs">{r.count}</TableCell>
+                <TableCell className="text-xs">
+                  <Badge variant="outline" className="text-[10px]">
+                    {r.urgency}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="outline"
+                    className={
+                      r.status === "Approved"
+                        ? "border-success/40 bg-success/10 text-success text-[10px]"
+                        : r.status === "Converted"
+                        ? "border-primary/40 bg-primary/10 text-primary text-[10px]"
+                        : "border-gold/40 text-gold text-[10px]"
+                    }
+                  >
+                    {r.status}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right pr-6 text-xs text-muted-foreground">{r.requestedAt}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* Backward-compatible default CoreHCM wrapper */
+export function CoreHCM({ role = "admin" }: { role?: Role }) {
+  return <OrgChartModule role={role} />;
 }
