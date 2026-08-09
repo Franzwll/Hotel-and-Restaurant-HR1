@@ -42,13 +42,21 @@ const recruitmentChildren = (base: string) => [
   { label: "New Hire Onboarding", to: `${base}/onboarding` },
 ];
 
+const essChildren = (base: string) => [
+  { label: "All Requests", to: `${base}/ess` },
+  { label: "Attendance", to: `${base}/ess?category=Attendance` },
+  { label: "Payroll", to: `${base}/ess?category=Payroll` },
+  { label: "Performance", to: `${base}/ess?category=Performance` },
+  { label: "Company Documents", to: `${base}/ess?category=Documents` },
+];
+
 export function navForRole(role: Role): NavItem[] {
   const base = roleMeta[role].base;
 
   if (role === "employee") {
     return [
       { label: "Dashboard", to: base, icon: LayoutDashboard },
-      { label: "ESS", to: `${base}/ess`, icon: Headset },
+      { label: "ESS", to: `${base}/ess`, icon: Headset, children: essChildren(base) },
       { label: "Onboarding", to: `${base}/onboarding`, icon: ClipboardCheck },
       { label: "Settings", to: `${base}/settings`, icon: Settings },
     ];
@@ -57,7 +65,6 @@ export function navForRole(role: Role): NavItem[] {
   const shared: NavItem[] = [
     { label: "Dashboard", to: base, icon: LayoutDashboard },
     {
-
       label: "Recruitment & Onboarding",
       to: `${base}/applicants`,
       icon: Megaphone,
@@ -65,7 +72,7 @@ export function navForRole(role: Role): NavItem[] {
     },
     { label: "Core HCM", to: `${base}/hcm`, icon: Building2 },
     { label: "Employee Records", to: `${base}/employees`, icon: FolderOpen },
-    { label: "ESS Management", to: `${base}/ess`, icon: Headset },
+    { label: "ESS Management", to: `${base}/ess`, icon: Headset, children: essChildren(base) },
   ];
 
 

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouterState } from "@tanstack/react-router";
 import {
   CheckCircle2,
   ClipboardList,
@@ -101,10 +102,35 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
   const [category, setCategory] = useState("all");
   const [behalfDept, setBehalfDept] = useState("all");
 
+  const searchStr = useRouterState({ select: (s) => s.location.searchStr });
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchStr || "");
+    const cat = params.get("category");
+    if (cat) {
+      setCategory(cat);
+    } else {
+      setCategory("all");
+    }
+  }, [searchStr]);
+
   const filtered = rows.filter((r) => {
     if (dept !== "all" && r.department !== dept) return false;
     if (status !== "all" && r.status !== status) return false;
-    if (category !== "all" && r.category !== category) return false;
+    if (category !== "all") {
+      if (category === "Documents") {
+        if (r.category !== "Documents" && r.category !== "HR Document") return false;
+      } else if (category === "Performance") {
+        if (
+          r.category !== "Performance" &&
+          !r.type.toLowerCase().includes("performance") &&
+          !r.type.toLowerCase().includes("promotion")
+        )
+          return false;
+      } else {
+        if (r.category !== category) return false;
+      }
+    }
     if (search && !`${r.employee} ${r.type} ${r.id}`.toLowerCase().includes(search.toLowerCase()))
       return false;
     return true;
@@ -246,16 +272,30 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
     setConfirmReject(false);
   };
 
+  const getHeaderTitle = () => {
+    if (category === "Attendance") return "ESS Management · Attendance Requests";
+    if (category === "Payroll") return "ESS Management · Payroll Requests";
+    if (category === "Performance") return "ESS Management · Performance Requests";
+    if (category === "Documents" || category === "HR Document") return "ESS Management · Company Documents";
+    return "ESS Management";
+  };
+
+  const getHeaderDescription = () => {
+    if (category === "Attendance") return "Process, approve, and track employee time corrections and attendance requests.";
+    if (category === "Payroll") return "Process overtime requests, payslip issuance, and payroll clarifications.";
+    if (category === "Performance") return "Review promotion applications, competency levels, and performance reports.";
+    if (category === "Documents" || category === "HR Document") return "Process certificates, tax forms (BIR 2316), and official document requests.";
+    return role === "superadmin"
+      ? "Organization-wide monitoring, bulk processing, workflow and policy configuration."
+      : "Process, approve and track employee self-service requests for your departments.";
+  };
+
   return (
     <div>
       <PageHeader
         eyebrow={role === "superadmin" ? "Super Admin · Core HR" : "Admin · Core HR"}
-        title="ESS Management"
-        description={
-          role === "superadmin"
-            ? "Organization-wide monitoring, bulk processing, workflow and policy configuration."
-            : "Process, approve and track employee self-service requests for your departments."
-        }
+        title={getHeaderTitle()}
+        description={getHeaderDescription()}
         actions={
           <Button size="sm" variant="outline" onClick={() => setReportsOpen(true)}>
             <FileText className="mr-2 h-4 w-4" /> Generate reports

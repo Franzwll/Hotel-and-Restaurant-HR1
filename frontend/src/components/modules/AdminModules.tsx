@@ -2,10 +2,12 @@ import { useState } from "react";
 import {
   Bell,
   Building2,
+  Check,
   Clock,
   Database,
   Download,
   Globe,
+  Info,
   KeyRound,
   Laptop,
   Monitor,
@@ -1889,52 +1891,6 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
   );
 }
 
-export function EmployeeOnboarding() {
-  const hire = newHires.find((h) => h.name === myProfile.name) ?? newHires[0]!;
-  const [checklist, setChecklist] = useState(hire.checklist);
-  const pct = Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100);
-  return (
-    <div>
-      <PageHeader
-        eyebrow="Employee"
-        title="My Onboarding"
-        description="Complete your requirements to move to the next stage."
-      />
-      <Card className="border-border/70">
-        <CardContent className="p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="eyebrow">Current stage</p>
-              <p className="font-display text-3xl font-semibold text-primary">{hire.stage}</p>
-            </div>
-            <Badge variant="outline">{pct}% complete</Badge>
-          </div>
-          <Progress value={pct} className="mt-3 h-2" />
-          <div className="mt-5 space-y-2">
-            {checklist.map((c) => (
-              <label
-                key={c.item}
-                className="flex cursor-pointer items-center gap-3 rounded-md border border-border p-3"
-              >
-                <Checkbox
-                  checked={c.done}
-                  onCheckedChange={() =>
-                    setChecklist((p) =>
-                      p.map((x) => (x.item === c.item ? { ...x, done: !x.done } : x)),
-                    )
-                  }
-                />
-                <span className={c.done ? "text-sm text-muted-foreground line-through" : "text-sm"}>
-                  {c.item}
-                </span>
-              </label>
-            ))}
-          </div>
-          <Button className="mt-4" onClick={() => toast.success("Requirements submitted to HR")}>
-            <Plus className="mr-2 h-4 w-4" /> Submit requirements
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+export { EmployeeOnboarding } from "@/components/modules/EmployeeOnboarding";
+
+

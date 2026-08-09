@@ -1,22 +1,25 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useRouterState } from "@tanstack/react-router";
 import { toast } from "sonner";
+import {
+  Clock,
+  FileText,
+  TrendingUp,
+  Award,
+  BookOpen,
+  Search,
+  ArrowUpDown,
+  Send,
+  Building
+} from "lucide-react";
 
 import { PageHeader } from "@/components/portal/PageHeader";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { usePagination } from "@/hooks/usePagination";
 import { StatCard } from "@/components/portal/StatCard";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -45,113 +48,744 @@ import {
   myPayroll,
   myProfile,
   mySchedule,
+  myPerformance,
+  wireframeActivity,
   requestCategories,
 } from "@/data/ess";
 
-const peso = (n: number) => `₱${n.toLocaleString("en-PH")}`;
+type RequestItem = {
+  id?: string;
+  category: string;
+  type: string;
+  date: string;
+  isoDate: string;
+  status: "Pending" | "Approved" | "Rejected" | "Released";
+  statusRank: number;
+};
 
 export function EmployeeEss() {
+  const [activeTab, setActiveTab] = useState("overview");
   const [category, setCategory] = useState(requestCategories[0]!.name);
-  const mine = essRequests.filter((r) => r.employeeId === myProfile.employeeId);
-  const types = requestCategories.find((c) => c.name === category)?.types ?? [];
 
-  const attendancePage = usePagination(myAttendance.history);
-  const payslipPage = usePagination(myPayroll.payslips);
+  const searchStr = useRouterState({ select: (s) => s.location.searchStr });
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchStr || "");
+    const cat = params.get("category");
+    if (cat === "Attendance") setActiveTab("attendance");
+    else if (cat === "Payroll") setActiveTab("payroll");
+    else if (cat === "Performance") setActiveTab("performance");
+    else if (cat === "Documents") setActiveTab("documents");
+    else if (!cat) setActiveTab("overview");
+  }, [searchStr]);
+
+  // Dynamic state for active activity table
+  const [activities, setActivities] = useState<RequestItem[]>(wireframeActivity as RequestItem[]);
+
+  // Search & Sort states for Overview Recent Activity
+  const [raSearch, setRaSearch] = useState("");
+  const [raSort, setRaSort] = useState("date-desc");
+
+  // Search & Sort states for Attendance Requests
+  const [attRequests, setAttRequests] = useState([
+    { date: "Jul 20, 2026", isoDate: "2026-07-20", type: "Missed Time Out", status: "Pending", statusRank: 0 },
+    { date: "Jun 12, 2026", isoDate: "2026-06-12", type: "Time In Correction", status: "Approved", statusRank: 1 },
+  ]);
+  const [attSearch, setAttSearch] = useState("");
+  const [attSort, setAttSort] = useState("date-desc");
+
+  // Form states for Attendance
+  const [attType, setAttType] = useState("Time In Correction");
+  const [attDate, setAttDate] = useState("");
+  const [attDetails, setAttDetails] = useState("");
+
+  // Search & Sort states for Payroll Requests
+  const [payRequests, setPayRequests] = useState([
+    { date: "Jul 28, 2026", isoDate: "2026-07-28", type: "Overtime Request", status: "Pending", statusRank: 0 },
+    { date: "Jun 18, 2026", isoDate: "2026-06-18", type: "Overtime Request", status: "Approved", statusRank: 1 },
+    { date: "Jun 01, 2026", isoDate: "2026-06-01", type: "Payslip Request", status: "Released", statusRank: 1 },
+  ]);
+  const [paySearch, setPaySearch] = useState("");
+  const [paySort, setPaySort] = useState("date-desc");
+
+  // Form states for Payroll
+  const [payType, setPayType] = useState("Payroll Clarification");
+  const [payPeriod, setPayPeriod] = useState("");
+  const [payDetails, setPayDetails] = useState("");
+
+  // Search & Sort states for Document Requests
+  const [docRequests, setDocRequests] = useState([
+    { date: "Jun 01, 2026", isoDate: "2026-06-01", type: "Certificate of Employment", status: "Released", statusRank: 1 },
+    { date: "Feb 03, 2026", isoDate: "2026-02-03", type: "HMO Certification", status: "Released", statusRank: 1 },
+  ]);
+  const [docSearch, setDocSearch] = useState("");
+  const [docSort, setDocSort] = useState("date-desc");
+
+  // Form states for Documents
+  const [docType, setDocType] = useState("BIR Form 2316");
+  const [docPurpose, setDocPurpose] = useState("");
+
+  // Form states for Promotion
+  const [promoPosition, setPromoPosition] = useState("");
+  const [promoJustification, setPromoJustification] = useState("");
+  const [lastPromo, setLastPromo] = useState(myPerformance.lastPromotionRequest);
+
+  // Counts calculation
+  const pendingAttCount = attRequests.filter((r) => r.status === "Pending").length;
+  const pendingPayCount = payRequests.filter((r) => r.status === "Pending").length;
+  const pendingPerfCount = lastPromo.status === "Pending" ? 1 : 0;
+  const pendingDocCount = docRequests.filter((r) => r.status === "Pending").length;
+
+  // Filtered & Sorted Recent Activity
+  const filteredActivities = useMemo(() => {
+    return activities
+      .filter(
+        (item) =>
+          !raSearch ||
+          item.category.toLowerCase().includes(raSearch.toLowerCase()) ||
+          item.type.toLowerCase().includes(raSearch.toLowerCase()) ||
+          item.status.toLowerCase().includes(raSearch.toLowerCase())
+      )
+      .sort((a, b) => {
+        if (raSort === "date-desc") return b.isoDate.localeCompare(a.isoDate);
+        if (raSort === "date-asc") return a.isoDate.localeCompare(b.isoDate);
+        if (raSort === "status") return a.statusRank - b.statusRank;
+        if (raSort === "category") return a.category.localeCompare(b.category);
+        return 0;
+      });
+  }, [activities, raSearch, raSort]);
+
+  // Filtered & Sorted Attendance Requests
+  const filteredAttRequests = useMemo(() => {
+    return attRequests
+      .filter((r) => !attSearch || r.type.toLowerCase().includes(attSearch.toLowerCase()) || r.status.toLowerCase().includes(attSearch.toLowerCase()))
+      .sort((a, b) => {
+        if (attSort === "date-desc") return b.isoDate.localeCompare(a.isoDate);
+        if (attSort === "date-asc") return a.isoDate.localeCompare(b.isoDate);
+        if (attSort === "status") return a.statusRank - b.statusRank;
+        return 0;
+      });
+  }, [attRequests, attSearch, attSort]);
+
+  // Filtered & Sorted Payroll Requests
+  const filteredPayRequests = useMemo(() => {
+    return payRequests
+      .filter((r) => !paySearch || r.type.toLowerCase().includes(paySearch.toLowerCase()) || r.status.toLowerCase().includes(paySearch.toLowerCase()))
+      .sort((a, b) => {
+        if (paySort === "date-desc") return b.isoDate.localeCompare(a.isoDate);
+        if (paySort === "date-asc") return a.isoDate.localeCompare(b.isoDate);
+        if (paySort === "status") return a.statusRank - b.statusRank;
+        return 0;
+      });
+  }, [payRequests, paySearch, paySort]);
+
+  // Filtered & Sorted Document Requests
+  const filteredDocRequests = useMemo(() => {
+    return docRequests
+      .filter((r) => !docSearch || r.type.toLowerCase().includes(docSearch.toLowerCase()) || r.status.toLowerCase().includes(docSearch.toLowerCase()))
+      .sort((a, b) => {
+        if (docSort === "date-desc") return b.isoDate.localeCompare(a.isoDate);
+        if (docSort === "date-asc") return a.isoDate.localeCompare(b.isoDate);
+        if (docSort === "status") return a.statusRank - b.statusRank;
+        return 0;
+      });
+  }, [docRequests, docSearch, docSort]);
+
+  // Pagination hooks
+  const raPage = usePagination(filteredActivities);
+  const attPage = usePagination(filteredAttRequests);
+  const payPage = usePagination(filteredPayRequests);
+  const docPage = usePagination(filteredDocRequests);
+
+  const mine = essRequests.filter((r) => r.employeeId === myProfile.employeeId);
   const minePage = usePagination(mine);
+
+  // Submit Handlers
+  const handleAttSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const todayStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const isoStr = new Date().toISOString().slice(0, 10);
+    const newReq = { date: todayStr, isoDate: isoStr, type: attType, status: "Pending" as const, statusRank: 0 };
+    setAttRequests([newReq, ...attRequests]);
+    setActivities([{ category: "Attendance", type: attType, date: todayStr, isoDate: isoStr, status: "Pending", statusRank: 0 }, ...activities]);
+    toast.success(`${attType} request submitted successfully.`);
+    setAttDetails("");
+  };
+
+  const handlePaySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const todayStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const isoStr = new Date().toISOString().slice(0, 10);
+    const newReq = { date: todayStr, isoDate: isoStr, type: payType, status: "Pending" as const, statusRank: 0 };
+    setPayRequests([newReq, ...payRequests]);
+    setActivities([{ category: "Payroll", type: payType, date: todayStr, isoDate: isoStr, status: "Pending", statusRank: 0 }, ...activities]);
+    toast.success(`${payType} request submitted successfully.`);
+    setPayPeriod("");
+    setPayDetails("");
+  };
+
+  const handleDocSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const todayStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const isoStr = new Date().toISOString().slice(0, 10);
+    const newReq = { date: todayStr, isoDate: isoStr, type: docType, status: "Pending" as const, statusRank: 0 };
+    setDocRequests([newReq, ...docRequests]);
+    setActivities([{ category: "Documents", type: docType, date: todayStr, isoDate: isoStr, status: "Pending", statusRank: 0 }, ...activities]);
+    toast.success(`${docType} request submitted successfully.`);
+    setDocPurpose("");
+  };
+
+  const handlePromoSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!promoPosition) return;
+    const todayStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const isoStr = new Date().toISOString().slice(0, 10);
+    setLastPromo({ position: promoPosition, status: "Pending", date: todayStr });
+    setActivities([{ category: "Performance", type: `Promotion: ${promoPosition}`, date: todayStr, isoDate: isoStr, status: "Pending", statusRank: 0 }, ...activities]);
+    toast.success("Promotion request submitted successfully.");
+    setPromoPosition("");
+    setPromoJustification("");
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "Pending":
+        return <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">Pending</Badge>;
+      case "Approved":
+        return <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">Approved</Badge>;
+      case "Released":
+      case "Completed":
+        return <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30">Released</Badge>;
+      case "Rejected":
+        return <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/30">Rejected</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  const isDedicatedModule = ["attendance", "payroll", "performance", "documents"].includes(activeTab);
+
+  const getPageTitle = () => {
+    switch (activeTab) {
+      case "attendance":
+        return "Employee Self-Service · Attendance";
+      case "payroll":
+        return "Employee Self-Service · Payroll";
+      case "performance":
+        return "Employee Self-Service · Performance";
+      case "documents":
+        return "Employee Self-Service · Company Documents";
+      default:
+        return "Employee Self-Service";
+    }
+  };
+
+  const getPageDescription = () => {
+    switch (activeTab) {
+      case "attendance":
+        return "Submit time-in/time-out corrections and track attendance request status.";
+      case "payroll":
+        return "Submit overtime requests, request payslips, and process payroll clarifications.";
+      case "performance":
+        return "Track performance reviews, LMS learning courses, and submit promotion requests.";
+      case "documents":
+        return "Request BIR Form 2316, Certificate of Employment, and official HR documents.";
+      default:
+        return "Submit requests, track their status, and manage your employment documents without visiting HR.";
+    }
+  };
 
   return (
     <div>
       <PageHeader
-        eyebrow="Employee"
-        title="Employee Self-Service"
-        description="Your real-time HR information, request submission, and request tracking."
+        eyebrow="Employee Portal"
+        title={getPageTitle()}
+        description={getPageDescription()}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Today's Time In" value={myAttendance.today.timeIn} tone="primary" />
-        <StatCard label="Hours Worked" value={`${myAttendance.today.hours}h`} tone="gold" />
-        <StatCard
-          label="Leave Credits Left"
-          value={myLeaveBalances.reduce((t, l) => t + (l.total - l.used), 0)}
-          tone="success"
-        />
-        <StatCard label="Next Payout" value={myPayroll.nextPayout} />
-      </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
+        {!isDedicatedModule && (
+          <TabsList className="flex h-auto flex-wrap justify-start border-b border-border bg-transparent p-0">
+            <TabsTrigger value="overview" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">Overview</TabsTrigger>
+            <TabsTrigger value="schedule" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">Schedule</TabsTrigger>
+            <TabsTrigger value="leave" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">Leave Balances</TabsTrigger>
+            <TabsTrigger value="benefits" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">Benefits &amp; Loans</TabsTrigger>
+            <TabsTrigger value="submit" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">Submit Request</TabsTrigger>
+            <TabsTrigger value="tracking" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">All Requests</TabsTrigger>
+          </TabsList>
+        )}
 
-      <Tabs defaultValue="attendance" className="mt-6">
-        <TabsList className="flex h-auto flex-wrap justify-start">
-          <TabsTrigger value="attendance">Attendance</TabsTrigger>
-          <TabsTrigger value="schedule">Schedule</TabsTrigger>
-          <TabsTrigger value="leave">Leave</TabsTrigger>
-          <TabsTrigger value="payroll">Payroll</TabsTrigger>
-          <TabsTrigger value="benefits">Benefits &amp; Loans</TabsTrigger>
-          <TabsTrigger value="submit">Submit a Request</TabsTrigger>
-          <TabsTrigger value="tracking">My Requests</TabsTrigger>
-        </TabsList>
+        {/* OVERVIEW TAB */}
+        <TabsContent value="overview" className="mt-6 space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Attendance" value={`${pendingAttCount} pending`} hint="Last request: Jul 20, 2026" icon={Clock} tone="primary" onClick={() => setActiveTab("attendance")} />
+            <StatCard label="Payroll" value={`${pendingPayCount} pending`} hint="Last request: Jul 28, 2026" icon={FileText} tone="gold" onClick={() => setActiveTab("payroll")} />
+            <StatCard label="Performance" value={`${pendingPerfCount} pending`} hint="Last request: Jul 15, 2026" icon={TrendingUp} tone="success" onClick={() => setActiveTab("performance")} />
+            <StatCard label="Documents" value={`${pendingDocCount} pending`} hint="Last request: Jun 1, 2026" icon={FileText} onClick={() => setActiveTab("documents")} />
+          </div>
 
-        <TabsContent value="attendance" className="mt-4">
-          <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
+          <Card className="border-border/70">
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-3">
+              <div>
+                <CardTitle className="font-display text-xl font-semibold flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-primary" />
+                  Recent Activity
+                </CardTitle>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search activity..."
+                    value={raSearch}
+                    onChange={(e) => setRaSearch(e.target.value)}
+                    className="pl-8 h-9 w-[160px] sm:w-[200px]"
+                  />
+                </div>
+                <Select value={raSort} onValueChange={setRaSort}>
+                  <SelectTrigger className="h-9 w-[150px]">
+                    <ArrowUpDown className="mr-2 h-3.5 w-3.5" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="date-desc">Newest first</SelectItem>
+                    <SelectItem value="date-asc">Oldest first</SelectItem>
+                    <SelectItem value="status">Status (pending first)</SelectItem>
+                    <SelectItem value="category">Category</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Request Type</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {raPage.pageItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                        No activity matching filter.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    raPage.pageItems.map((item, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="font-medium text-xs">{item.category}</TableCell>
+                        <TableCell className="text-sm">{item.type}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{item.date}</TableCell>
+                        <TableCell>{getStatusBadge(item.status)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+              <TablePagination
+                page={raPage.page}
+                pageCount={raPage.pageCount}
+                from={raPage.from}
+                to={raPage.to}
+                total={raPage.total}
+                label="activities"
+                onPageChange={raPage.setPage}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ATTENDANCE TAB */}
+        <TabsContent value="attendance" className="mt-6">
+          <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border/70">
-              <CardContent className="p-6">
-                <h2 className="font-display text-2xl font-semibold">Today&apos;s Attendance</h2>
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  {Object.entries(myAttendance.today).map(([k, v]) => (
-                    <div key={k} className="rounded-md border border-border p-3">
-                      <p className="eyebrow">{k.replace(/([A-Z])/g, " $1")}</p>
-                      <p className="mt-1 text-sm font-medium">{v}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  {Object.entries(myAttendance.monthly).map(([k, v]) => (
-                    <div key={k} className="rounded-md border border-border p-3">
-                      <p className="eyebrow">Monthly {k}</p>
-                      <p className="font-display text-2xl font-semibold text-primary">{v}</p>
-                    </div>
-                  ))}
-                </div>
+              <CardHeader>
+                <CardTitle className="font-display text-xl font-semibold">New Attendance Request</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleAttSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Request Type</Label>
+                    <Select value={attType} onValueChange={setAttType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Time In Correction">Time In Correction</SelectItem>
+                        <SelectItem value="Time Out Correction">Time Out Correction</SelectItem>
+                        <SelectItem value="Missed Time In/Out">Missed Time In/Out</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Date of Attendance</Label>
+                    <Input type="date" value={attDate} onChange={(e) => setAttDate(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Details</Label>
+                    <Textarea
+                      rows={3}
+                      placeholder="Explain the correction needed..."
+                      value={attDetails}
+                      onChange={(e) => setAttDetails(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" className="w-full">
+                    <Send className="mr-2 h-4 w-4" /> Submit Request
+                  </Button>
+                </form>
               </CardContent>
             </Card>
+
             <Card className="border-border/70">
-              <CardContent className="p-6">
-                <h2 className="font-display text-2xl font-semibold">Attendance History</h2>
-                <Table className="mt-4">
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-3">
+                <CardTitle className="font-display text-xl font-semibold">My Attendance Requests</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Search..."
+                    value={attSearch}
+                    onChange={(e) => setAttSearch(e.target.value)}
+                    className="h-8 w-[120px]"
+                  />
+                  <Select value={attSort} onValueChange={setAttSort}>
+                    <SelectTrigger className="h-8 w-[130px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date-desc">Newest first</SelectItem>
+                      <SelectItem value="date-asc">Oldest first</SelectItem>
+                      <SelectItem value="status">Status</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
-                      <TableHead>In</TableHead>
-                      <TableHead>Out</TableHead>
-                      <TableHead>Hours</TableHead>
-                      <TableHead>Remark</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {attendancePage.pageItems.map((h) => (
-                      <TableRow key={h.date}>
-                        <TableCell className="text-xs">{h.date}</TableCell>
-                        <TableCell className="text-xs">{h.in}</TableCell>
-                        <TableCell className="text-xs">{h.out}</TableCell>
-                        <TableCell className="text-xs">{h.hours}</TableCell>
-                        <TableCell className="text-xs">{h.remark}</TableCell>
+                    {attPage.pageItems.map((r, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="text-xs">{r.date}</TableCell>
+                        <TableCell className="text-sm">{r.type}</TableCell>
+                        <TableCell>{getStatusBadge(r.status)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
                 <TablePagination
-                  page={attendancePage.page}
-                  pageCount={attendancePage.pageCount}
-                  from={attendancePage.from}
-                  to={attendancePage.to}
-                  total={attendancePage.total}
-                  label="records"
-                  onPageChange={attendancePage.setPage}
+                  page={attPage.page}
+                  pageCount={attPage.pageCount}
+                  from={attPage.from}
+                  to={attPage.to}
+                  total={attPage.total}
+                  label="requests"
+                  onPageChange={attPage.setPage}
                 />
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        <TabsContent value="schedule" className="mt-4">
+        {/* PAYROLL TAB */}
+        <TabsContent value="payroll" className="mt-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="font-display text-xl font-semibold">New Payroll Request</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handlePaySubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Request Type</Label>
+                    <Select value={payType} onValueChange={setPayType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Payroll Clarification">Payroll Clarification</SelectItem>
+                        <SelectItem value="Overtime Request">Overtime Request</SelectItem>
+                        <SelectItem value="Payslip Request">Payslip Request</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Pay Period</Label>
+                    <Input
+                      placeholder="e.g., July 1–15, 2026"
+                      value={payPeriod}
+                      onChange={(e) => setPayPeriod(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Details</Label>
+                    <Textarea
+                      rows={3}
+                      placeholder="Describe your request..."
+                      value={payDetails}
+                      onChange={(e) => setPayDetails(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" className="w-full">
+                    <Send className="mr-2 h-4 w-4" /> Submit Request
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-3">
+                <CardTitle className="font-display text-xl font-semibold">My Payroll Requests</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Search..."
+                    value={paySearch}
+                    onChange={(e) => setPaySearch(e.target.value)}
+                    className="h-8 w-[120px]"
+                  />
+                  <Select value={paySort} onValueChange={setPaySort}>
+                    <SelectTrigger className="h-8 w-[130px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date-desc">Newest first</SelectItem>
+                      <SelectItem value="date-asc">Oldest first</SelectItem>
+                      <SelectItem value="status">Status</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {payPage.pageItems.map((r, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="text-xs">{r.date}</TableCell>
+                        <TableCell className="text-sm">{r.type}</TableCell>
+                        <TableCell>{getStatusBadge(r.status)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <TablePagination
+                  page={payPage.page}
+                  pageCount={payPage.pageCount}
+                  from={payPage.from}
+                  to={payPage.to}
+                  total={payPage.total}
+                  label="requests"
+                  onPageChange={payPage.setPage}
+                />
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* PERFORMANCE TAB */}
+        <TabsContent value="performance" className="mt-6 space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <div className="eyebrow flex items-center gap-1.5"><TrendingUp className="h-3.5 w-3.5 text-primary" /> Last Review</div>
+                <p className="mt-1 text-sm font-semibold">{myPerformance.lastReview}</p>
+                <p className="text-xs text-muted-foreground mt-1">Next review: {myPerformance.nextReview}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <div className="eyebrow flex items-center gap-1.5"><Award className="h-3.5 w-3.5 text-primary" /> Competency Assessment</div>
+                <p className="mt-1 text-sm font-semibold">{myPerformance.competencyLevel}</p>
+                <p className="text-xs text-muted-foreground mt-1">Assessed: {myPerformance.lastAssessed}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <div className="eyebrow flex items-center gap-1.5"><BookOpen className="h-3.5 w-3.5 text-primary" /> Learning Courses</div>
+                <p className="mt-1 text-sm font-semibold">{myPerformance.lmsCoursesCompleted} of {myPerformance.lmsCoursesAssigned} Completed</p>
+                <Progress value={(myPerformance.lmsCoursesCompleted / myPerformance.lmsCoursesAssigned) * 100} className="mt-2 h-1.5" />
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <div className="eyebrow flex items-center gap-1.5"><Building className="h-3.5 w-3.5 text-primary" /> Salary Grade</div>
+                <p className="mt-1 text-sm font-semibold">{myPerformance.salaryGrade} · {myPerformance.salaryStep}</p>
+                <p className="text-xs text-muted-foreground mt-1">Position: {myProfile.position}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle className="font-display text-xl font-semibold">Promotion Request</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Submit a request for promotion consideration to be reviewed by your department head and HR.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handlePromoSubmit} className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Position Applied For</Label>
+                    <Input
+                      placeholder="e.g., Senior Line Cook"
+                      value={promoPosition}
+                      onChange={(e) => setPromoPosition(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Current Position</Label>
+                    <Input value={myProfile.position} disabled className="bg-muted" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Justification &amp; Accomplishments</Label>
+                  <Textarea
+                    rows={3}
+                    placeholder="Explain your qualifications and key contributions..."
+                    value={promoJustification}
+                    onChange={(e) => setPromoJustification(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit">
+                  <Send className="mr-2 h-4 w-4" /> Submit Promotion Request
+                </Button>
+              </form>
+
+              <div className="mt-6 border-t border-border pt-4 flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Last Promotion Request Status:</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{lastPromo.position}</span>
+                  {getStatusBadge(lastPromo.status)}
+                  <span className="text-xs text-muted-foreground">— {lastPromo.date}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* DOCUMENTS TAB */}
+        <TabsContent value="documents" className="mt-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="font-display text-xl font-semibold">Request a Document</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleDocSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Document Type</Label>
+                    <Select value={docType} onValueChange={setDocType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="BIR Form 2316">BIR Form 2316</SelectItem>
+                        <SelectItem value="Certificate of Employment">Certificate of Employment</SelectItem>
+                        <SelectItem value="Certificate of No Pending Case">Certificate of No Pending Case</SelectItem>
+                        <SelectItem value="Service Record">Service Record</SelectItem>
+                        <SelectItem value="Clearance Certificate">Clearance Certificate</SelectItem>
+                        <SelectItem value="Back Pay Computation">Back Pay Computation</SelectItem>
+                        <SelectItem value="HMO Certification">HMO Certification</SelectItem>
+                        <SelectItem value="Employment Contract Copy">Employment Contract Copy</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Purpose</Label>
+                    <Input
+                      placeholder="e.g., Bank loan application, visa requirement..."
+                      value={docPurpose}
+                      onChange={(e) => setDocPurpose(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" className="w-full">
+                    <Send className="mr-2 h-4 w-4" /> Submit Request
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-3">
+                <CardTitle className="font-display text-xl font-semibold">My Document Requests</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Search..."
+                    value={docSearch}
+                    onChange={(e) => setDocSearch(e.target.value)}
+                    className="h-8 w-[120px]"
+                  />
+                  <Select value={docSort} onValueChange={setDocSort}>
+                    <SelectTrigger className="h-8 w-[130px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date-desc">Newest first</SelectItem>
+                      <SelectItem value="date-asc">Oldest first</SelectItem>
+                      <SelectItem value="status">Status</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Document</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {docPage.pageItems.map((r, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="text-sm font-medium">{r.type}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{r.date}</TableCell>
+                        <TableCell>{getStatusBadge(r.status)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <TablePagination
+                  page={docPage.page}
+                  pageCount={docPage.pageCount}
+                  from={docPage.from}
+                  to={docPage.to}
+                  total={docPage.total}
+                  label="documents"
+                  onPageChange={docPage.setPage}
+                />
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* SCHEDULE TAB */}
+        <TabsContent value="schedule" className="mt-6">
           <Card className="border-border/70">
             <CardContent className="p-6">
               <h2 className="font-display text-2xl font-semibold">Weekly Schedule</h2>
@@ -169,7 +803,8 @@ export function EmployeeEss() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="leave" className="mt-4">
+        {/* LEAVE BALANCES TAB */}
+        <TabsContent value="leave" className="mt-6">
           <Card className="border-border/70">
             <CardContent className="p-6">
               <h2 className="font-display text-2xl font-semibold">Leave Balances</h2>
@@ -190,98 +825,11 @@ export function EmployeeEss() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="payroll" className="mt-4">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card className="border-border/70">
-              <CardContent className="p-6">
-                <h2 className="font-display text-2xl font-semibold">Payroll Summary</h2>
-                <div className="mt-3 flex gap-6">
-                  <div>
-                    <p className="eyebrow">Gross pay</p>
-                    <p className="font-display text-3xl font-semibold">{peso(myPayroll.gross)}</p>
-                  </div>
-                  <div>
-                    <p className="eyebrow">Net pay</p>
-                    <p className="font-display text-3xl font-semibold text-primary">
-                      {peso(myPayroll.net)}
-                    </p>
-                  </div>
-                </div>
-                <p className="eyebrow mt-4">Earnings</p>
-                {myPayroll.breakdown.map((b) => (
-                  <div
-                    key={b.label}
-                    className="flex justify-between border-b border-border py-1.5 text-sm"
-                  >
-                    <span>{b.label}</span>
-                    <span>{peso(b.amount)}</span>
-                  </div>
-                ))}
-                <p className="eyebrow mt-4">Deductions</p>
-                {myPayroll.deductions.map((b) => (
-                  <div
-                    key={b.label}
-                    className="flex justify-between border-b border-border py-1.5 text-sm"
-                  >
-                    <span>{b.label}</span>
-                    <span className="text-destructive">-{peso(b.amount)}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="p-6">
-                <h2 className="font-display text-2xl font-semibold">Payslip History</h2>
-                <Table className="mt-4">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Period</TableHead>
-                      <TableHead>Net</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {payslipPage.pageItems.map((p) => (
-                      <TableRow key={p.period}>
-                        <TableCell className="text-xs">{p.period}</TableCell>
-                        <TableCell className="text-sm">{peso(p.net)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{p.status}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => toast("Payslip downloaded")}
-                          >
-                            Download
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                <TablePagination
-                  page={payslipPage.page}
-                  pageCount={payslipPage.pageCount}
-                  from={payslipPage.from}
-                  to={payslipPage.to}
-                  total={payslipPage.total}
-                  label="payslips"
-                  onPageChange={payslipPage.setPage}
-                />
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="benefits" className="mt-4">
+        {/* BENEFITS TAB */}
+        <TabsContent value="benefits" className="mt-6">
           <Card className="border-border/70">
             <CardContent className="p-6">
-              <h2 className="font-display text-2xl font-semibold">
-                Government &amp; Company Benefits
-              </h2>
+              <h2 className="font-display text-2xl font-semibold">Government &amp; Company Benefits</h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {myBenefits.map((b) => (
                   <div key={b.name} className="rounded-md border border-border p-4">
@@ -292,7 +840,7 @@ export function EmployeeEss() {
                 ))}
               </div>
               <div className="mt-4 rounded-md border border-border p-4">
-                <p className="eyebrow">Company loan</p>
+                <p className="eyebrow">Company Loan</p>
                 <p className="mt-1 text-sm">
                   Outstanding balance ₱5,400 · ₱450 / cut-off · 12 of 24 paid
                 </p>
@@ -302,10 +850,11 @@ export function EmployeeEss() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="submit" className="mt-4">
+        {/* SUBMIT REQUEST TAB */}
+        <TabsContent value="submit" className="mt-6">
           <Card className="border-border/70">
             <CardContent className="space-y-4 p-6">
-              <h2 className="font-display text-2xl font-semibold">Submit a Request</h2>
+              <h2 className="font-display text-2xl font-semibold">Submit General Request</h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Category</Label>
@@ -329,7 +878,7 @@ export function EmployeeEss() {
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
-                      {types.map((t) => (
+                      {(requestCategories.find((c) => c.name === category)?.types ?? []).map((t) => (
                         <SelectItem key={t} value={t}>
                           {t}
                         </SelectItem>
@@ -348,7 +897,7 @@ export function EmployeeEss() {
               </div>
               <div className="space-y-2">
                 <Label>Reason / details</Label>
-                <Textarea rows={4} placeholder="Provide details for HR…" />
+                <Textarea rows={4} placeholder="Provide details for HR..." />
               </div>
               <div className="space-y-2">
                 <Label>Supporting document</Label>
@@ -361,14 +910,15 @@ export function EmployeeEss() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="tracking" className="mt-4">
+        {/* TRACKING TAB */}
+        <TabsContent value="tracking" className="mt-6">
           <Card className="border-border/70">
             <CardContent className="p-6">
-              <h2 className="font-display text-2xl font-semibold">My Requests</h2>
+              <h2 className="font-display text-2xl font-semibold">All My Requests</h2>
               <Table className="mt-4">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Request</TableHead>
+                    <TableHead>Request ID</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Filed</TableHead>
                     <TableHead>Assigned HR</TableHead>
@@ -382,122 +932,24 @@ export function EmployeeEss() {
                       <TableCell className="text-sm">{r.type}</TableCell>
                       <TableCell className="text-xs">{r.filed}</TableCell>
                       <TableCell className="text-xs">{r.assignedTo}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{r.status}</Badge>
-                      </TableCell>
+                      <TableCell>{getStatusBadge(r.status)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-                <TablePagination
-                  page={minePage.page}
-                  pageCount={minePage.pageCount}
-                  from={minePage.from}
-                  to={minePage.to}
-                  total={minePage.total}
-                  label="requests"
-                  onPageChange={minePage.setPage}
-                />
+              <TablePagination
+                page={minePage.page}
+                pageCount={minePage.pageCount}
+                from={minePage.from}
+                to={minePage.to}
+                total={minePage.total}
+                label="requests"
+                onPageChange={minePage.setPage}
+              />
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-export function EmployeeProfile() {
-  return (
-    <div>
-      <PageHeader
-        eyebrow="Employee"
-        title="My Profile"
-        description="Your employment record on file."
-      />
-      <Card className="border-border/70">
-        <CardContent className="p-6">
-          <div className="flex flex-wrap items-center gap-5">
-            <Avatar className="h-24 w-24">
-              <AvatarFallback className="bg-primary/10 font-display text-3xl text-primary">
-                {myProfile.initials}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <h2 className="font-display text-3xl font-semibold">{myProfile.name}</h2>
-              <p className="text-sm text-muted-foreground">
-                {myProfile.position} · {myProfile.department}
-              </p>
-              <Badge variant="outline" className="mt-2">
-                {myProfile.employmentType}
-              </Badge>
-            </div>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="ml-auto">
-                  Request info update
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle className="font-display text-2xl">
-                    Personal Information Update Request
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <Label>Field to update</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select field" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {[
-                          "Address",
-                          "Contact Number",
-                          "Email",
-                          "Civil Status",
-                          "Emergency Contact",
-                          "Government ID",
-                        ].map((f) => (
-                          <SelectItem key={f} value={f}>
-                            {f}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>New value</Label>
-                    <Input />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={() => toast.success("Update request submitted")}>Submit</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              ["Employee ID", myProfile.employeeId],
-              ["Branch", myProfile.branch],
-              ["Immediate supervisor", myProfile.supervisor],
-              ["Date hired", myProfile.dateHired],
-              ["Status", myProfile.status],
-              ["Email", myProfile.email],
-              ["Contact number", myProfile.phone],
-              ["Address", myProfile.address],
-              ["Emergency contact", myProfile.emergencyContact],
-            ].map(([k, v]) => (
-              <div key={k} className="rounded-md border border-border p-4">
-                <p className="eyebrow">{k}</p>
-                <p className="mt-1 text-sm">{v}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

@@ -238,3 +238,35 @@ export const essActivityLog: EssActivityLog[] = [
   { id: "ELOG-024", timestamp: "2026-07-18 11:20", user: "Ana Ramos", action: "Signed loan agreement", module: "Loan", category: "Loan", department: "Front Office", requestId: "REQ-4405" },
   { id: "ELOG-025", timestamp: "2026-07-17 09:47", user: "Kevin Dela Cruz", action: "Marked sick leave as completed", module: "Leave", category: "Leave", department: "Kitchen / Culinary", requestId: "REQ-4410" },
 ];
+
+export const myPerformance = {
+  lastReview: "Q2 2026 — Meets Expectations",
+  nextReview: "Q3 2026",
+  competencyLevel: "Proficient",
+  lastAssessed: "Jan 2026",
+  lmsCoursesAssigned: 3,
+  lmsCoursesCompleted: 2,
+  salaryGrade: "SG-8",
+  salaryStep: "Step 2",
+  lastPromotionRequest: {
+    position: "Senior Guest Service Associate",
+    status: "Pending",
+    date: "Jul 15, 2026",
+  },
+};
+
+export const wireframeActivity = [
+  { category: "Payroll", type: "Overtime Request", date: "Jul 28, 2026", isoDate: "2026-07-28", status: "Pending", statusRank: 0 },
+  { category: "Attendance", type: "Missed Time Out", date: "Jul 20, 2026", isoDate: "2026-07-20", status: "Pending", statusRank: 0 },
+  { category: "Performance", type: "Promotion Request", date: "Jul 15, 2026", isoDate: "2026-07-15", status: "Pending", statusRank: 0 },
+  { category: "Payroll", type: "Overtime Request", date: "Jun 18, 2026", isoDate: "2026-06-18", status: "Approved", statusRank: 1 },
+  { category: "Documents", type: "Certificate of Employment", date: "Jun 1, 2026", isoDate: "2026-06-01", status: "Released", statusRank: 1 },
+  { category: "Documents", type: "HMO Certification", date: "Feb 3, 2026", isoDate: "2026-02-03", status: "Released", statusRank: 1 },
+];
+
+export const myLoginActivity = [
+  { device: "Chrome · Windows", location: "Makati City, PH", time: "Jul 31, 2026, 8:12 AM", date: "2026-07-31T08:12" },
+  { device: "Mobile App · Android", location: "Makati City, PH", time: "Jul 30, 2026, 6:45 PM", date: "2026-07-30T18:45" },
+  { device: "Edge · Windows", location: "Makati City, PH", time: "Jul 25, 2026, 9:30 AM", date: "2026-07-25T09:30" },
+];
+
