@@ -1,15 +1,21 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ConciergeBell, Eye, EyeOff, Lock, Mail, ShieldCheck, UserCog } from "lucide-react";
 import { toast } from "sonner";
 
-import loginHero from "@/assets/oxford-suite-makati-interior1.png";
+import slide1 from "@/assets/oxford-suite-makati-interior2.png";
+import slide2 from "@/assets/o-suiteb.png";
+import slide3 from "@/assets/oxford-suite-makati-interior3b.png";
+import slide4 from "@/assets/o-suite(1)b.png";
+import slide5 from "@/assets/o-suite(2)b.png";
+import slide6 from "@/assets/oxford-suite-makati-interior1.png";
 import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -71,8 +77,55 @@ const facts = [
   { k: "Platform", v: "Enterprise Operations" },
 ];
 
+/** Cinematic loop frames for the login hero panel. */
+const slides = [
+  { src: slide1, alt: "Oxford Suites Makati lobby with marble compass flooring", pan: "kb-a" },
+  { src: slide2, alt: "Oxford Suites Makati front desk and reception lounge", pan: "kb-b" },
+  { src: slide3, alt: "Oxford Suites Makati restaurant and bar", pan: "kb-c" },
+  { src: slide4, alt: "The O Suite living area with spiral staircase", pan: "kb-b" },
+  { src: slide5, alt: "Junior suite with king bed and lounge seating", pan: "kb-a" },
+  { src: slide6, alt: "Deluxe twin room with work desk", pan: "kb-c" },
+];
 
+const SLIDE_MS = 6500;
 
+/** Advances the hero slideshow once the first frame has decoded. */
+function useHeroSlideshow() {
+  const [index, setIndex] = useState(0);
+  const [ready, setReady] = useState(false);
+  const reduced = useRef(false);
+
+  useEffect(() => {
+    reduced.current =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let cancelled = false;
+    const first = new Image();
+    first.src = slides[0]!.src;
+    const done = () => !cancelled && setReady(true);
+    first.decode?.().then(done).catch(done) ?? done();
+    first.onload = done;
+    // Warm the remaining frames in the background.
+    slides.slice(1).forEach((s) => {
+      const img = new Image();
+      img.src = s.src;
+    });
+    const safety = window.setTimeout(done, 2500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(safety);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ready || reduced.current) return;
+    const id = window.setInterval(() => setIndex((i) => (i + 1) % slides.length), SLIDE_MS);
+    return () => window.clearInterval(id);
+  }, [ready]);
+
+  return { index, setIndex, ready, reduced: reduced.current };
+}
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -82,12 +135,21 @@ function LoginPage() {
   const [error, setError] = useState("");
   const role = roles.find((r) => r.id === roleId)!;
   const [email, setEmail] = useState(role.email);
+  const { index, setIndex, ready } = useHeroSlideshow();
+  const reveal = useMemo(
+    () => (step: number) => ({
+      animation: "fade-in 0.7s ease-out both",
+      animationDelay: `${step * 110}ms`,
+    }),
+    [],
+  );
 
   const pickRole = (id: (typeof roles)[number]["id"]) => {
     setRoleId(id);
     setEmail(roles.find((r) => r.id === id)!.email);
     setError("");
   };
+
 
   return (
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,30rem)] xl:grid-cols-[minmax(0,1.1fr)_minmax(27rem,34rem)]">
@@ -96,82 +158,142 @@ function LoginPage() {
         className="relative hidden overflow-hidden bg-primary text-primary-foreground lg:flex lg:flex-col"
         style={{ padding: "clamp(1.75rem, 3vw, 4rem)" }}
       >
-        <img
-          src={loginHero}
-          alt="Oxford Suites Makati lobby with marble flooring and warm lighting"
-          sizes="(min-width: 1024px) 55vw, 100vw"
-          className="absolute inset-0 h-full w-full scale-105 object-cover object-center"
-        />
-        {/* Layered scrims: brand tint, left depth for text contrast, vignette */}
-        <div aria-hidden className="absolute inset-0 bg-primary/65 mix-blend-multiply" />
+        {/* Cinematic photo loop */}
+        {slides.map((s, i) => (
+          <img
+            key={s.src}
+            src={s.src}
+            alt={i === 0 ? s.alt : ""}
+            aria-hidden={i !== 0}
+            loading={i === 0 ? "eager" : "lazy"}
+            className={cn(
+              "absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-[1600ms] ease-in-out",
+              s.pan,
+              i === index ? "opacity-100" : "opacity-0",
+            )}
+          />
+        ))}
+
+        {/* Layered scrims: light brand tint + bottom-left depth for text contrast */}
+        <div aria-hidden className="absolute inset-0 bg-primary/20 mix-blend-multiply" />
         <div
           aria-hidden
-          className="absolute inset-0 bg-gradient-to-tr from-foreground/85 via-foreground/40 to-transparent"
+          className="absolute inset-0 bg-gradient-to-t from-foreground/85 via-foreground/25 to-transparent"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 shadow-[inset_0_0_9rem_2rem_hsl(0_0%_0%/0.45)]"
+          className="absolute inset-0 bg-gradient-to-r from-foreground/55 via-foreground/10 to-transparent"
         />
+
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 shadow-[inset_0_0_7rem_1rem_hsl(0_0%_0%/0.28)]"
+        />
+
+
+        {/* Loading veil until the first frame decodes */}
+        <div
+          aria-hidden
+          className={cn(
+            "absolute inset-0 z-20 flex items-end bg-primary transition-opacity duration-700",
+            ready ? "pointer-events-none opacity-0" : "opacity-100",
+          )}
+          style={{ padding: "clamp(1.75rem, 3vw, 4rem)" }}
+        >
+          <div className="w-full max-w-sm space-y-4">
+            <Logo tone="invert" size="lg" />
+            <div className="h-px w-full overflow-hidden bg-primary-foreground/20">
+              <span className="hero-progress block h-full w-1/3 bg-gold" />
+            </div>
+            <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/60">
+              Preparing your workspace
+            </p>
+          </div>
+        </div>
 
         <div className="relative z-10 flex min-h-0 w-full flex-1 flex-col justify-between gap-10">
           {/* Top row */}
-          <div className="flex items-start justify-between gap-6">
+          <div className="flex items-start justify-between gap-6" style={reveal(0)}>
             <Link to="/" className="block">
               <Logo tone="invert" size="lg" />
             </Link>
-            <span className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary-foreground/25 bg-foreground/25 px-3 py-1 text-[0.7rem] font-medium uppercase tracking-[0.14em] text-primary-foreground/85 backdrop-blur-sm">
+            <span className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gold/40 bg-foreground/45 px-3 py-1 text-[0.7rem] font-medium uppercase tracking-[0.14em] text-primary-foreground/90">
               <ShieldCheck className="h-3.5 w-3.5 text-gold" />
               Oxford Suites Makati
             </span>
           </div>
 
-          {/* Bottom stack — single left alignment axis */}
-          <div className="flex min-h-0 max-w-[40rem] flex-col gap-7">
-            <span aria-hidden className="block h-px w-16 bg-gold" />
+          {/* Content stack */}
+          <div className="flex min-h-0 items-end justify-between gap-6">
+            <div className="min-h-0 max-w-[40rem]" style={reveal(1)}>
+              <span
+                className="mb-5 inline-flex items-center gap-3 text-[0.68rem] font-medium uppercase tracking-[0.22em] text-gold"
+                style={reveal(1)}
+              >
+                <span aria-hidden className="block h-px w-10 bg-gold" />
+                Hospitality Operations
+              </span>
 
-            <h1
-              className="max-w-[18ch] font-display font-semibold leading-[1.1] tracking-tight"
-              style={{ fontSize: "clamp(2rem, 2.8vw, 3.25rem)" }}
-            >
-              Welcome to Oxford Suites Makati
-            </h1>
+              <h1
+                className="max-w-[16ch] font-display font-semibold leading-[1.05] tracking-tight drop-shadow-[0_2px_18px_hsl(0_0%_0%/0.55)]"
+                style={{ fontSize: "clamp(2.1rem, 3vw, 3.5rem)", ...reveal(2) }}
+              >
+                Where hospitality meets excellence
+              </h1>
 
-            <h2
-              className="-mt-4 max-w-[26ch] font-display font-medium leading-[1.2] tracking-tight text-primary-foreground/90"
-              style={{ fontSize: "clamp(1.25rem, 1.6vw, 1.75rem)" }}
-            >
-              Where hospitality meets excellence
-            </h2>
-
-            <p
-              className="max-w-[54ch] text-primary-foreground/80"
-              style={{ fontSize: "clamp(0.875rem, 1vw, 1rem)" }}
-            >
-              This platform supports the Oxford Suites Makati team in delivering thoughtful,
-              seamless service across every guest touchpoint — from hotel rooms and restaurant
-              tables to the operations that keep everything running behind the scenes.
-            </p>
-
-            <blockquote className="border-l-2 border-gold pl-5 pt-1 text-primary-foreground/85">
-              <p className="text-sm font-medium italic leading-relaxed">
-                "Great service starts with a team that is organized, supported, and empowered."
+              <p
+                className="mt-5 max-w-[44ch] text-primary-foreground/80 drop-shadow-[0_1px_10px_hsl(0_0%_0%/0.5)]"
+                style={{ fontSize: "clamp(0.9rem, 1vw, 1.0625rem)", ...reveal(3) }}
+              >
+                One secure workspace for the teams behind every room, every table and every guest
+                touchpoint at Oxford Suites Makati.
               </p>
-            </blockquote>
 
-            <dl className="flex flex-wrap gap-x-10 gap-y-4 border-t border-primary-foreground/20 pt-6">
-              {facts.map((i) => (
-                <div key={i.k} className="min-w-0">
-                  <dt className="text-[0.65rem] uppercase tracking-[0.16em] text-primary-foreground/60">
-                    {i.k}
-                  </dt>
-                  <dd className="mt-1 text-sm font-medium text-primary-foreground/90">{i.v}</dd>
-                </div>
+              <dl
+                className="mt-9 flex flex-wrap gap-x-12 gap-y-4 border-t border-primary-foreground/25 pt-6"
+                style={reveal(5)}
+              >
+                {facts.map((i) => (
+                  <div key={i.k} className="min-w-0">
+                    <dt className="text-[0.62rem] uppercase tracking-[0.18em] text-gold/90">
+                      {i.k}
+                    </dt>
+                    <dd className="mt-1.5 text-sm font-medium text-primary-foreground/90">
+                      {i.v}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+
+            {/* Frame indicators */}
+            <div className="flex shrink-0 items-center gap-2 self-end pb-2" style={reveal(6)}>
+              {slides.map((s, i) => (
+                <button
+                  key={s.src}
+                  type="button"
+                  onClick={() => setIndex(i)}
+                  aria-label={`Show view ${i + 1}`}
+                  aria-current={i === index}
+                  className="group grid h-6 place-items-center"
+                >
+                  <span
+                    className={cn(
+                      "block h-[3px] rounded-full transition-all duration-500",
+                      i === index
+                        ? "w-9 bg-gold"
+                        : "w-4 bg-primary-foreground/40 group-hover:w-7 group-hover:bg-primary-foreground/75",
+                    )}
+                  />
+                </button>
               ))}
-            </dl>
-          </div>
+            </div>
 
+          </div>
         </div>
       </div>
+
 
       {/* Credential panel */}
       <div className="flex min-w-0 items-center justify-center overflow-y-auto bg-background px-5 py-10 sm:px-8 sm:py-14 lg:px-10">

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
   CalendarDays,
@@ -11,6 +11,7 @@ import {
   Download,
   Eye,
   FileText,
+  CalendarPlus,
   History,
   Image as ImageIcon,
   Mail,
@@ -26,6 +27,7 @@ import {
   Upload,
   UserPlus,
   Users,
+  X,
   XCircle,
   ZoomIn,
   ZoomOut,
@@ -33,6 +35,7 @@ import {
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from "recharts";
 import { toast } from "sonner";
 
+import { ListBody } from "@/components/portal/ListBody";
 import { PageHeader } from "@/components/portal/PageHeader";
 import { StatCard } from "@/components/portal/StatCard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -95,6 +98,7 @@ import {
 } from "@/data/applicants";
 import { departments, positions } from "@/data/hr";
 import { hireStore } from "@/data/hires";
+import { jobs } from "@/data/jobs";
 import { useNavigate } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { SortHead, useSort } from "@/components/portal/sortable";
@@ -290,14 +294,35 @@ const monthNames = [
 
 const yearOptions = Array.from({ length: 11 }, (_, i) => 2021 + i);
 
-/** Default interview slot configuration — 14 applicants per slot, 14 time slots, on-site. */
+/** Default interview slot configuration — 14 interviewers / rooms, 14 time slots, on-site. */
 const DEFAULT_SLOT_SETTINGS = {
   capacityPerSlot: 14,
+  interviewersAvailable: 14,
+  roomsAvailable: 14,
   slotCount: 14,
   startTime: "08:00",
   intervalMinutes: 30,
   allowWalkIn: true,
   defaultMode: "On-site" as "On-site" | "Virtual",
+  breakEnabled: true,
+  breakStart: "12:00",
+  breakEnd: "13:00",
+};
+
+/** Parses "HH:MM" into minutes-from-midnight. */
+const parseTimeToMinutes = (t: string) => {
+  const [h, m] = t.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+};
+
+/** Formats minutes-from-midnight into a 12-hour "hh:mm AM/PM" label. */
+const formatMinutesAsTime = (mins: number) => {
+  const total = ((mins % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  const suffix = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${suffix}`;
 };
 
 /** Builds the day's time slots from a start time, interval and slot count. */
@@ -311,6 +336,34 @@ const buildTimeSlots = (startTime: string, intervalMinutes: number, count: numbe
     const suffix = hour24 >= 12 ? "PM" : "AM";
     const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
     return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${suffix}`;
+  });
+};
+
+/** Builds the full daily schedule (start/end minutes + labels), flagging any slot that overlaps the break window. */
+const buildSlotSchedule = (
+  startTime: string,
+  intervalMinutes: number,
+  count: number,
+  breakEnabled: boolean,
+  breakStart: string,
+  breakEnd: string,
+) => {
+  const [h, m] = startTime.split(":").map(Number);
+  const base = (h ?? 8) * 60 + (m ?? 0);
+  const step = Math.max(5, intervalMinutes);
+  const breakStartMin = parseTimeToMinutes(breakStart);
+  const breakEndMin = parseTimeToMinutes(breakEnd);
+  return Array.from({ length: Math.max(1, count) }, (_, i) => {
+    const startMin = base + i * step;
+    const endMin = startMin + step;
+    const isBreak = breakEnabled && startMin < breakEndMin && endMin > breakStartMin;
+    return {
+      startMin,
+      endMin,
+      label: formatMinutesAsTime(startMin),
+      endLabel: formatMinutesAsTime(endMin),
+      isBreak,
+    };
   });
 };
 
@@ -332,6 +385,8 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
   const [positionFilter, setPositionFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [stageFilter, setStageFilter] = useState<string>("all");
+  const [rankingFilter, setRankingFilter] = useState<"all" | "passed" | "ready">("all");
+  const applicantListRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
   const [review, setReview] = useState<Applicant | null>(null);
   const [evaluating, setEvaluating] = useState<Applicant | null>(null);
@@ -365,6 +420,8 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
   const [interviewSearch, setInterviewSearch] = useState("");
   const [interviewStatusFilter, setInterviewStatusFilter] = useState<string>("all");
   const [interviewModeFilter, setInterviewModeFilter] = useState<string>("all");
+  const [calSearch, setCalSearch] = useState("");
+  const [calStatusFilter, setCalStatusFilter] = useState<string>("all");
   const [slotSettings, setSlotSettings] = useState(DEFAULT_SLOT_SETTINGS);
   const [slotDialogOpen, setSlotDialogOpen] = useState(false);
 
@@ -382,7 +439,6 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
     )[0]!,
     mode: DEFAULT_SLOT_SETTINGS.defaultMode as string,
     interviewer: interviewers[0]!.name,
-    walkIn: false,
   });
   const [scheduleDept, setScheduleDept] = useState<string>("all");
 
@@ -458,6 +514,12 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
     if (positionFilter !== "all" && a.position !== positionFilter) return false;
     if (statusFilter !== "all" && a.status !== statusFilter) return false;
     if (stageFilter !== "all" && a.stage !== stageFilter) return false;
+    if (rankingFilter === "passed" && a.score < passing) return false;
+    if (
+      rankingFilter === "ready" &&
+      !(a.stage === "Interview Scheduled" && !assessments.some((x) => x.applicantId === a.id))
+    )
+      return false;
     if (
       search &&
       !`${a.name} ${a.email} ${a.position}`.toLowerCase().includes(search.toLowerCase())
@@ -465,6 +527,38 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
       return false;
     return true;
   });
+
+  /** Switches to the applicant list, applies a quick metric filter, and scrolls it into view. */
+  const goToApplicants = (filter: "all" | "passed" | "ready") => {
+    setTab("ranking");
+    setRankingFilter(filter);
+    if (filter === "all") {
+      setPositionFilter("all");
+      setStatusFilter("all");
+      setStageFilter("all");
+      setSearch("");
+    }
+    window.setTimeout(() => {
+      applicantListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  };
+
+  /** Opens the Interview Scheduling section, focused on today's date. */
+  const goToTodayInterviews = () => {
+    setTab("scheduling");
+    setSchedule((s) => ({ ...s, date: TODAY_ISO }));
+    const d = new Date(`${TODAY_ISO}T00:00:00`);
+    setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    setInterviewSearch("");
+    setInterviewStatusFilter("all");
+    setInterviewModeFilter("all");
+  };
+
+  /** Opens the Assessments section filtered to applicants ready for assessment. */
+  const goToReadyToAssess = () => {
+    setTab("assessment");
+    setAssessmentFilter("ready");
+  };
 
   const applicantSort = useSort(filtered, {
     name: (a) => a.name,
@@ -516,6 +610,11 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
 
   /** Accept → prefill the scheduler and jump to the Interview Scheduling tab. */
   const acceptAndSchedule = (a: Applicant) => {
+    const dept =
+      positions.find((p) => p.title === a.position)?.department ??
+      jobs.find((j) => j.id === a.jobId)?.department;
+    const known = dept && departments.some((d) => d.name === dept) ? dept : "all";
+    setScheduleDept(known);
     setSchedule((s) => ({ ...s, applicant: a.name }));
     setReview(null);
     setTab("scheduling");
@@ -532,14 +631,10 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
     const taken = interviews.filter(
       (i) => i.date === schedule.date && i.time === schedule.time,
     ).length;
-    if (taken >= slotSettings.capacityPerSlot) {
+    if (taken >= capacityPerSlot) {
       toast.error(
-        `That slot is full — ${slotSettings.capacityPerSlot} applicants already booked for ${schedule.time}.`,
+        `That slot is full — ${capacityPerSlot} applicants already booked for ${schedule.time}.`,
       );
-      return;
-    }
-    if (schedule.walkIn && !slotSettings.allowWalkIn) {
-      toast.error("Walk-in bookings are turned off in the slot settings.");
       return;
     }
     const src = rows.find((a) => a.name === schedule.applicant);
@@ -561,12 +656,10 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
       actionType: "Interview Scheduled",
       target: schedule.applicant,
       module: "Interview Scheduling",
-      details: `${schedule.mode}${schedule.walkIn ? " walk-in" : ""} interview booked for ${schedule.date} · ${schedule.time} with ${schedule.interviewer}.`,
+      details: `${schedule.mode} interview booked for ${schedule.date} · ${schedule.time} with ${schedule.interviewer}.`,
     });
     toast.success(`Interview confirmed for ${schedule.applicant}`, {
-      description: `${schedule.date} · ${schedule.time} · ${schedule.mode}${
-        schedule.walkIn ? " · Walk-in" : ""
-      }`,
+      description: `${schedule.date} · ${schedule.time} · ${schedule.mode}`,
     });
   };
 
@@ -640,6 +733,8 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
     const i = cancelInterview;
     if (!i) return;
     setInterviews((prev) => prev.filter((x) => x.id !== i.id));
+    const src = rows.find((a) => a.name === i.applicant);
+    if (src) setStage(src.id, "Screened");
     addAudit({
       actionType: "Interview Cancelled",
       target: i.applicant,
@@ -750,10 +845,40 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
     });
   }, [viewMonth]);
 
-  const slotsForSelected = useMemo(
+  const dailySchedule = useMemo(
     () =>
-      buildTimeSlots(slotSettings.startTime, slotSettings.intervalMinutes, slotSettings.slotCount),
-    [slotSettings.startTime, slotSettings.intervalMinutes, slotSettings.slotCount],
+      buildSlotSchedule(
+        slotSettings.startTime,
+        slotSettings.intervalMinutes,
+        slotSettings.slotCount,
+        slotSettings.breakEnabled,
+        slotSettings.breakStart,
+        slotSettings.breakEnd,
+      ),
+    [
+      slotSettings.startTime,
+      slotSettings.intervalMinutes,
+      slotSettings.slotCount,
+      slotSettings.breakEnabled,
+      slotSettings.breakStart,
+      slotSettings.breakEnd,
+    ],
+  );
+
+  /** Bookable slot labels — excludes any slot that overlaps the configured break window. */
+  const slotsForSelected = useMemo(
+    () => dailySchedule.filter((s) => !s.isBreak).map((s) => s.label),
+    [dailySchedule],
+  );
+
+  /** Maximum concurrent interviews per slot — limited by whichever is scarcer, interviewers or rooms. */
+  const capacityPerSlot = Math.max(
+    1,
+    Math.min(
+      slotSettings.capacityPerSlot,
+      slotSettings.interviewersAvailable,
+      slotSettings.roomsAvailable,
+    ),
   );
 
   /** Interviews already booked for a given date + time slot. */
@@ -764,7 +889,41 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
     (a) => a.stage === "Interview Scheduled" && !assessments.some((x) => x.applicantId === a.id),
   );
 
-  const interviewFiltered = interviews
+  /** Accepted applicants that passed screening but have no interview booked yet. */
+  type InterviewRow = {
+    id: string;
+    applicant: string;
+    position: string;
+    date: string;
+    time: string;
+    mode: string;
+    interviewer: string;
+    status: string;
+    pending?: boolean;
+  };
+
+  const needSchedule: InterviewRow[] = rows
+    .filter(
+      (a) =>
+        a.status === "fit" &&
+        a.stage === "Screened" &&
+        !interviews.some((i) => i.applicant === a.name),
+    )
+    .map((a) => ({
+      id: `NS-${a.id}`,
+      applicant: a.name,
+      position: a.position,
+      date: "",
+      time: "",
+      mode: "—",
+      interviewer: "—",
+      status: "Need to Schedule",
+      pending: true,
+    }));
+
+  const interviewRows: InterviewRow[] = [...needSchedule, ...interviews];
+
+  const interviewFiltered = interviewRows
     .filter((i) =>
       interviewSearch ? i.applicant.toLowerCase().includes(interviewSearch.toLowerCase()) : true,
     )
@@ -893,7 +1052,14 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
 
       <div className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="h-full [&>*]:h-full">
-          <StatCard label="Total Applicants" value={rows.length} icon={Users} tone="primary" />
+          <StatCard
+            label="Total Applicants"
+            value={rows.length}
+            hint="Tap to view all"
+            icon={Users}
+            tone="primary"
+            onClick={() => goToApplicants("all")}
+          />
         </div>
         <div className="h-full [&>*]:h-full">
           <StatCard
@@ -902,16 +1068,17 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
             hint={`Passing score ${passing}%`}
             icon={CheckCircle2}
             tone="success"
+            onClick={() => goToApplicants("passed")}
           />
         </div>
         <div className="h-full [&>*]:h-full">
           <StatCard
-            label="Scheduled Interviews"
-            value={interviews.filter((i) => i.status === "Scheduled").length}
-            hint="Tap to open scheduling"
+            label="Today Scheduled Interviews"
+            value={interviews.filter((i) => i.date === TODAY_ISO).length}
+            hint="Tap to open today's schedule"
             icon={CalendarDays}
             tone="gold"
-            onClick={() => setTab("scheduling")}
+            onClick={goToTodayInterviews}
           />
         </div>
         <div className="h-full [&>*]:h-full">
@@ -920,6 +1087,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
             value={readyToAssess.length}
             hint="Awaiting evaluation"
             icon={ClipboardCheck}
+            onClick={goToReadyToAssess}
           />
         </div>
       </div>
@@ -1126,7 +1294,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
             </Card>
           </div>
 
-          <Card className="border-border/70">
+          <Card ref={applicantListRef} className="scroll-mt-4 border-border/70">
             <CardContent className="p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -1135,6 +1303,22 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     Based on the applied job position
                     {positionFilter !== "all" ? ` · ${positionFilter}` : " · all positions"}.
                   </p>
+                  {rankingFilter !== "all" && (
+                    <Badge
+                      variant="outline"
+                      className="mt-1.5 gap-1 border-primary/30 bg-primary/10 text-primary"
+                    >
+                      {rankingFilter === "passed" ? "Passed screening" : "Ready to assess"}
+                      <button
+                        type="button"
+                        className="ml-1 hover:opacity-70"
+                        onClick={() => setRankingFilter("all")}
+                        aria-label="Clear quick filter"
+                      >
+                        ✕
+                      </button>
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Input
@@ -1197,6 +1381,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
               </div>
 
               <div className="mt-4">
+                <ListBody>
                 <Table className="table-fixed text-xs">
                   <TableHeader>
                     <TableRow>
@@ -1333,6 +1518,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     ))}
                   </TableBody>
                 </Table>
+                </ListBody>
                 <TablePagination
                   page={applicantPage.page}
                   pageCount={applicantPage.pageCount}
@@ -1366,38 +1552,49 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                       </p>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      size="sm"
+                  <div className="flex shrink-0 items-center justify-end gap-2">
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const today = new Date("2026-08-03");
+                          setViewMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+                          setSchedule((s) => ({ ...s, date: isoOf(today) }));
+                        }}
+                      >
+                        Today
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        aria-label="Previous month"
+                        onClick={() =>
+                          setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))
+                        }
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        aria-label="Next month"
+                        onClick={() =>
+                          setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))
+                        }
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                      <Button
                       variant="outline"
-                      onClick={() => {
-                        const today = new Date("2026-08-03");
-                        setViewMonth(new Date(today.getFullYear(), today.getMonth(), 1));
-                        setSchedule((s) => ({ ...s, date: isoOf(today) }));
-                      }}
-                    >
-                      Today
-                    </Button>
-                    <Button
                       size="icon"
-                      variant="outline"
-                      aria-label="Previous month"
-                      onClick={() =>
-                        setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))
-                      }
+                      aria-label="Slot settings"
+                      title="Slot settings"
+                      onClick={() => setSlotDialogOpen(true)}
                     >
-                      <ChevronLeft className="h-4 w-4" />
+                      <Settings2 className="h-4 w-4" />
                     </Button>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      aria-label="Next month"
-                      onClick={() =>
-                        setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))
-                      }
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
+                    </>
                   </div>
                 </div>
 
@@ -1522,7 +1719,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                 </div>
 
                 <div className="mt-4 flex flex-none flex-col">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <p className="font-display text-base font-semibold">
                       Interviews on{" "}
                       {new Date(`${schedule.date}T00:00:00`).toLocaleDateString("en-US", {
@@ -1538,6 +1735,28 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     >
                       {interviews.filter((i) => i.date === schedule.date).length}
                     </Badge>
+                    <div className="ml-auto flex min-w-0 items-center gap-1.5">
+                      <div className="relative w-28">
+                        <Search className="pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={calSearch}
+                          onChange={(e) => setCalSearch(e.target.value)}
+                          placeholder="Search"
+                          className="h-7 pl-6 text-xs"
+                        />
+                      </div>
+                      <Select value={calStatusFilter} onValueChange={setCalStatusFilter}>
+                        <SelectTrigger className="h-7 w-[92px] text-xs">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All status</SelectItem>
+                          <SelectItem value="Scheduled">Scheduled</SelectItem>
+                          <SelectItem value="Completed">Completed</SelectItem>
+                          <SelectItem value="No Show">No Show</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
 
                   <div className="relative mt-2 h-[10.5rem]">
@@ -1545,6 +1764,16 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
 
                       {interviews
                         .filter((i) => i.date === schedule.date)
+                        .filter((i) =>
+                          calStatusFilter === "all" ? true : i.status === calStatusFilter,
+                        )
+                        .filter((i) =>
+                          calSearch
+                            ? `${i.applicant} ${i.position} ${i.interviewer}`
+                                .toLowerCase()
+                                .includes(calSearch.toLowerCase())
+                            : true,
+                        )
                         .map((i) => (
                           <button
                             key={i.id}
@@ -1646,125 +1875,348 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                 })()}
 
                 <div className="mt-4 flex-1 space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Slot settings
-                      </p>
-                      <p className="text-[0.7rem] text-muted-foreground">
-                        {slotSettings.slotCount} slots · {slotSettings.capacityPerSlot} applicants
-                        each · {slotSettings.intervalMinutes} min ·{" "}
-                        {slotSettings.allowWalkIn ? "walk-in allowed" : "no walk-ins"}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={() => setSlotDialogOpen(true)}
-                    >
-                      <Settings2 className="h-4 w-4" /> Slot settings
-                    </Button>
-                  </div>
-
                   <Dialog open={slotDialogOpen} onOpenChange={setSlotDialogOpen}>
-                    <DialogContent className="sm:max-w-lg">
+                    <DialogContent className="max-h-[88vh] overflow-hidden sm:max-w-[min(1400px,95vw)]">
                       <DialogHeader>
-                        <DialogTitle className="font-display text-2xl">Slot settings</DialogTitle>
+                        <DialogTitle className="flex items-center gap-2 font-display text-2xl">
+                          <Settings2 className="h-5 w-5 text-primary" /> Slot Settings
+                        </DialogTitle>
                         <DialogDescription>
-                          Set how many time slots the day has, how many applicants each slot
-                          accepts, and whether walk-ins are allowed.
+                          Customize how interview slots are generated and managed.
                         </DialogDescription>
                       </DialogHeader>
-                      <div className="space-y-4">
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="space-y-1">
-                            <Label className="text-xs">Applicants per time slot</Label>
-                            <Input
-                              type="number"
-                              min={1}
-                              max={100}
-                              value={slotSettings.capacityPerSlot}
-                              onChange={(e) =>
-                                setSlotSettings((p) => ({
-                                  ...p,
-                                  capacityPerSlot: Math.max(1, Number(e.target.value) || 1),
-                                }))
-                              }
-                            />
+
+                      <div className="grid gap-6 lg:grid-cols-2">
+                        {/* ── Left column: configuration ─────────────── */}
+                        <div className="max-h-[58vh] space-y-5 overflow-y-auto pr-1">
+                          <div className="space-y-3">
+                            <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground">
+                              <Users className="h-3.5 w-3.5" /> CAPACITY (PER TIME SLOT)
+                            </p>
+                            <p className="text-[0.7rem] text-muted-foreground">
+                              The number of interviews that can happen at the same time based on
+                              available interviewers and rooms.
+                            </p>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div className="space-y-1">
+                                <Label className="text-xs">Available Interviewers</Label>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  max={100}
+                                  value={slotSettings.interviewersAvailable}
+                                  onChange={(e) =>
+                                    setSlotSettings((p) => ({
+                                      ...p,
+                                      interviewersAvailable: Math.max(1, Number(e.target.value) || 1),
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">Available Rooms</Label>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  max={100}
+                                  value={slotSettings.roomsAvailable}
+                                  onChange={(e) =>
+                                    setSlotSettings((p) => ({
+                                      ...p,
+                                      roomsAvailable: Math.max(1, Number(e.target.value) || 1),
+                                    }))
+                                  }
+                                />
+                              </div>
+                            </div>
+                            <div className="rounded-lg border border-primary/30 bg-primary/10 p-3">
+                              <p className="text-xs font-medium text-foreground">
+                                Maximum Concurrent Interviews
+                              </p>
+                              <div className="mt-1 flex items-baseline gap-2">
+                                <span className="font-display text-3xl font-bold text-primary">
+                                  {capacityPerSlot}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  interviews per time slot
+                                </span>
+                              </div>
+                              <p className="text-[0.65rem] text-muted-foreground">
+                                (Limited by available interviewers and rooms)
+                              </p>
+                            </div>
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Number of time slots</Label>
-                            <Input
-                              type="number"
-                              min={1}
-                              max={48}
-                              value={slotSettings.slotCount}
-                              onChange={(e) =>
-                                setSlotSettings((p) => ({
-                                  ...p,
-                                  slotCount: Math.min(48, Math.max(1, Number(e.target.value) || 1)),
-                                }))
-                              }
-                            />
+
+                          <div className="space-y-3 border-t border-border/70 pt-4">
+                            <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground">
+                              <CalendarClock className="h-3.5 w-3.5" /> TIME CONFIGURATION
+                            </p>
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <div className="space-y-1">
+                                <Label className="text-xs">First slot starts</Label>
+                                <Input
+                                  type="time"
+                                  value={slotSettings.startTime}
+                                  onChange={(e) =>
+                                    setSlotSettings((p) => ({
+                                      ...p,
+                                      startTime: e.target.value || "08:00",
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">Slot duration</Label>
+                                <Select
+                                  value={String(slotSettings.intervalMinutes)}
+                                  onValueChange={(v) =>
+                                    setSlotSettings((p) => ({ ...p, intervalMinutes: Number(v) }))
+                                  }
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {[15, 20, 30, 45, 60].map((m) => (
+                                      <SelectItem key={m} value={String(m)}>
+                                        {m} minutes
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">Number of time slots</Label>
+                                <Select
+                                  value={String(slotSettings.slotCount)}
+                                  onValueChange={(v) =>
+                                    setSlotSettings((p) => ({ ...p, slotCount: Number(v) }))
+                                  }
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {[6, 8, 10, 12, 14, 16, 18, 20].map((n) => (
+                                      <SelectItem key={n} value={String(n)}>
+                                        {n} slots
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">First slot starts</Label>
-                            <Input
-                              type="time"
-                              value={slotSettings.startTime}
-                              onChange={(e) =>
-                                setSlotSettings((p) => ({
-                                  ...p,
-                                  startTime: e.target.value || "08:00",
-                                }))
-                              }
-                            />
+
+                          <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                            <div className="flex items-center justify-between">
+                              <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground">
+                                <CalendarDays className="h-3.5 w-3.5" /> BREAK SLOT (UNAVAILABLE
+                                TIME)
+                              </p>
+                              <Switch
+                                checked={slotSettings.breakEnabled}
+                                onCheckedChange={(v) =>
+                                  setSlotSettings((p) => ({ ...p, breakEnabled: v }))
+                                }
+                              />
+                            </div>
+                            <p className="text-[0.7rem] text-muted-foreground">
+                              Time within this range will not be available for interviews.
+                            </p>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div className="space-y-1">
+                                <Label className="text-xs">Break start</Label>
+                                <Input
+                                  type="time"
+                                  disabled={!slotSettings.breakEnabled}
+                                  value={slotSettings.breakStart}
+                                  onChange={(e) =>
+                                    setSlotSettings((p) => ({
+                                      ...p,
+                                      breakStart: e.target.value || "12:00",
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">Break end</Label>
+                                <Input
+                                  type="time"
+                                  disabled={!slotSettings.breakEnabled}
+                                  value={slotSettings.breakEnd}
+                                  onChange={(e) =>
+                                    setSlotSettings((p) => ({
+                                      ...p,
+                                      breakEnd: e.target.value || "13:00",
+                                    }))
+                                  }
+                                />
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 border-primary/40 bg-primary/10 text-xs text-primary"
+                                disabled={!slotSettings.breakEnabled}
+                                onClick={() =>
+                                  setSlotSettings((p) => ({
+                                    ...p,
+                                    breakStart: "12:00",
+                                    breakEnd: "13:00",
+                                  }))
+                                }
+                              >
+                                Lunch Break
+                              </Button>
+                              {[15, 30, 60].map((mins) => (
+                                <Button
+                                  key={mins}
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  disabled={!slotSettings.breakEnabled}
+                                  onClick={() =>
+                                    setSlotSettings((p) => {
+                                      const startMin = parseTimeToMinutes(p.breakStart);
+                                      const endMin = ((startMin + mins) % (24 * 60) + 24 * 60) % (24 * 60);
+                                      const eh = String(Math.floor(endMin / 60)).padStart(2, "0");
+                                      const em = String(endMin % 60).padStart(2, "0");
+                                      return { ...p, breakEnd: `${eh}:${em}` };
+                                    })
+                                  }
+                                >
+                                  {mins === 60 ? "1 hour" : `${mins} min`}
+                                </Button>
+                              ))}
+                            </div>
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Slot length (minutes)</Label>
-                            <Select
-                              value={String(slotSettings.intervalMinutes)}
-                              onValueChange={(v) =>
-                                setSlotSettings((p) => ({ ...p, intervalMinutes: Number(v) }))
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {[15, 20, 30, 45, 60].map((m) => (
-                                  <SelectItem key={m} value={String(m)}>
-                                    {m} min
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+
+                          <div className="space-y-3 border-t border-border/70 pt-4">
+                            <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground">
+                              <Sliders className="h-3.5 w-3.5" /> OTHER OPTIONS
+                            </p>
+                            <div className="flex items-center justify-between rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+                              <div>
+                                <p className="text-xs font-medium">Walk-in applicants</p>
+                                <p className="text-[0.7rem] text-muted-foreground">
+                                  Allow applicants without a scheduled appointment.
+                                </p>
+                              </div>
+                              <Switch
+                                checked={slotSettings.allowWalkIn}
+                                onCheckedChange={(v) =>
+                                  setSlotSettings((p) => ({ ...p, allowWalkIn: v }))
+                                }
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Default interview type</Label>
+                              <Select
+                                value={slotSettings.defaultMode}
+                                onValueChange={(v) =>
+                                  setSlotSettings((p) => ({
+                                    ...p,
+                                    defaultMode: v as typeof p.defaultMode,
+                                  }))
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="On-site">On-site</SelectItem>
+                                  <SelectItem value="Virtual">Virtual</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+
+                        {/* ── Right column: preview ──────────────────── */}
+                        <div className="max-h-[58vh] space-y-4 overflow-y-auto pl-0 lg:border-l lg:border-border/70 lg:pl-6">
                           <div>
-                            <p className="text-xs font-medium">Accept walk-in applicants</p>
-                            <p className="text-[0.7rem] text-muted-foreground">
-                              Allow booking walk-ins into these slots.
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground">
+                                <CalendarDays className="h-3.5 w-3.5" /> DAILY SCHEDULE PREVIEW
+                              </p>
+                              <Badge
+                                variant="outline"
+                                className="border-primary/30 bg-primary/10 text-primary"
+                              >
+                                {slotsForSelected.length} slots available
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {dailySchedule[0]?.label} –{" "}
+                              {dailySchedule[dailySchedule.length - 1]?.endLabel}
                             </p>
+                            <div className="mt-2 space-y-1.5 rounded-lg border border-border/70 p-2">
+                              {dailySchedule.map((slot, idx) => (
+                                <div
+                                  key={idx}
+                                  className={cn(
+                                    "flex items-center justify-between rounded-md px-2.5 py-1.5 text-xs",
+                                    slot.isBreak
+                                      ? "border border-primary/30 bg-primary/10 font-medium text-primary"
+                                      : "bg-muted/20",
+                                  )}
+                                >
+                                  <span>
+                                    {slot.label} – {slot.endLabel}
+                                  </span>
+                                  {slot.isBreak ? (
+                                    <Badge className="border-primary/30 bg-primary/15 text-primary">
+                                      Break
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="border-success/30 bg-success/10 text-success">
+                                      Available
+                                    </Badge>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <Switch
-                            checked={slotSettings.allowWalkIn}
-                            onCheckedChange={(v) =>
-                              setSlotSettings((p) => ({ ...p, allowWalkIn: v }))
-                            }
-                          />
+
+                          <div className="rounded-lg border border-border/70 bg-muted/10 p-3">
+                            <p className="text-xs font-semibold tracking-wide text-muted-foreground">
+                              SUMMARY
+                            </p>
+                            <div className="mt-2 grid gap-1.5 text-xs sm:grid-cols-2">
+                              {[
+                                `${capacityPerSlot} interviews per slot`,
+                                `${slotSettings.interviewersAvailable} interviewers`,
+                                `${slotSettings.roomsAvailable} rooms`,
+                                `${slotSettings.slotCount} slots per day`,
+                                `${slotSettings.intervalMinutes} minutes duration`,
+                                slotSettings.breakEnabled
+                                  ? `Break window (${dailySchedule.find((s) => s.isBreak)?.label ?? slotSettings.breakStart} – ${slotSettings.breakEnd})`
+                                  : "No break configured",
+                                slotSettings.allowWalkIn ? "Walk-ins allowed" : "Walk-ins not allowed",
+                                `Default type: ${slotSettings.defaultMode}`,
+                              ].map((line) => (
+                                <span key={line} className="flex items-center gap-1.5">
+                                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+                                  {line}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       </div>
+
                       <DialogFooter className="gap-2">
                         <Button
                           variant="outline"
                           onClick={() => setSlotSettings(DEFAULT_SLOT_SETTINGS)}
                         >
-                          Reset defaults
+                          Reset to default
                         </Button>
-                        <Button onClick={() => setSlotDialogOpen(false)}>Done</Button>
+                        <Button onClick={() => setSlotDialogOpen(false)}>Save settings</Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
@@ -1820,47 +2272,15 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
 
                   <div className="space-y-2">
                     <Label className="text-sm">
-                      <span className="text-primary">2.</span> Choose Date
+                      <span className="text-primary">2.</span> Interview Date
                     </Label>
-                    <p className="text-xs font-medium text-muted-foreground">Suggested dates</p>
-                    <div className="flex flex-wrap gap-2">
-                      {suggestedSlots.map((s) => {
-                        const active = schedule.date === s.date;
-                        const booked = interviews.filter((i) => i.date === s.date).length;
-                        const dayCapacity =
-                          slotSettings.slotCount * slotSettings.capacityPerSlot - booked;
-                        return (
-                          <button
-                            key={s.date}
-                            type="button"
-                            onClick={() => {
-                              setSchedule((p) => ({
-                                ...p,
-                                date: s.date,
-                                time: slotsForSelected[0]!,
-                              }));
-                              const d = new Date(`${s.date}T00:00:00`);
-                              setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
-                            }}
-                            className={cn(
-                              "rounded-full border px-4 py-2 text-xs font-medium transition-colors",
-                              active
-                                ? "border-primary bg-primary/10 text-primary"
-                                : "border-border hover:border-primary/50",
-                            )}
-                          >
-                            {new Date(`${s.date}T00:00:00`).toLocaleDateString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            })}
-                            <span className="ml-1 font-normal text-muted-foreground">
-                              ({dayCapacity} open)
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <Input
+                      type="date"
+                      value={schedule.date}
+                      onChange={(e) =>
+                        setSchedule((p) => ({ ...p, date: e.target.value || p.date }))
+                      }
+                    />
                   </div>
 
                   <div className="space-y-2">
@@ -1869,46 +2289,32 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                         <span className="text-primary">3.</span> Select Time Slot
                       </Label>
                       <span className="text-[0.7rem] text-muted-foreground">
-                        {slotSettings.slotCount} slots · {slotSettings.capacityPerSlot} applicants
-                        each
-                        {slotSettings.allowWalkIn ? " · walk-in allowed" : ""}
+                        {slotSettings.slotCount} slots · {capacityPerSlot} applicants each
                       </span>
                     </div>
-                    <div className="flex max-h-[168px] flex-wrap gap-2 overflow-y-auto rounded-lg border border-border/70 bg-muted/15 p-2">
-                      {slotsForSelected.map((t) => {
-                        const used = bookedInSlot(schedule.date, t);
-                        const full = used >= slotSettings.capacityPerSlot;
-                        return (
-                          <button
-                            key={t}
-                            type="button"
-                            disabled={full}
-                            onClick={() => setSchedule((p) => ({ ...p, time: t }))}
-                            className={cn(
-                              "rounded-full border px-4 py-2 text-xs font-medium transition-colors",
-                              full && "cursor-not-allowed opacity-40 line-through",
-                              schedule.time === t && !full
-                                ? "border-primary bg-primary/10 text-primary"
-                                : "border-border hover:border-primary/50",
-                            )}
-                          >
-                            {t}
-                            <span className="ml-1 font-normal text-muted-foreground">
-                              ({slotSettings.capacityPerSlot - used} left)
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {slotSettings.allowWalkIn && (
-                      <div className="mt-2 flex items-center justify-between rounded-md border border-border/70 bg-muted/20 px-3 py-2">
-                        <span className="text-xs">Walk-in applicant</span>
-                        <Switch
-                          checked={schedule.walkIn}
-                          onCheckedChange={(v) => setSchedule((p) => ({ ...p, walkIn: v }))}
-                        />
-                      </div>
-                    )}
+                    <Select
+                      value={schedule.time}
+                      onValueChange={(v) => setSchedule((p) => ({ ...p, time: v }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a time slot" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {slotsForSelected.map((t) => {
+                          const used = bookedInSlot(schedule.date, t);
+                          const remaining = capacityPerSlot - used;
+                          const full = remaining <= 0;
+                          return (
+                            <SelectItem key={t} value={t} disabled={full}>
+                              {t}
+                              <span className="ml-1.5 text-xs text-muted-foreground">
+                                {full ? "(full)" : `(${remaining} left)`}
+                              </span>
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">
@@ -2014,7 +2420,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     <SelectContent>
                       <SelectItem value="all">All statuses</SelectItem>
                       <SelectItem value="Scheduled">Scheduled</SelectItem>
-                      <SelectItem value="Completed">Completed</SelectItem>
+                      <SelectItem value="Need to Schedule">Need to Schedule</SelectItem>
                     </SelectContent>
                   </Select>
                   <Select value={interviewModeFilter} onValueChange={setInterviewModeFilter}>
@@ -2030,6 +2436,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                 </div>
               </div>
               <div className="mt-4 overflow-x-auto">
+                <ListBody>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -2084,7 +2491,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                         <TableCell className="text-sm font-medium">{i.applicant}</TableCell>
                         <TableCell className="text-sm">{i.position}</TableCell>
                         <TableCell className="text-xs">
-                          {i.date} · {i.time}
+                          {i.pending ? "—" : `${i.date} · ${i.time}`}
                         </TableCell>
                         <TableCell className="text-xs">
                           <Badge variant="outline">{i.mode}</Badge>
@@ -2094,8 +2501,8 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                           <Badge
                             variant="outline"
                             className={
-                              i.status === "Completed"
-                                ? "border-success/30 bg-success/10 text-success"
+                              i.pending
+                                ? "border-caution/30 bg-caution/10 text-caution"
                                 : "border-primary/30 bg-primary/10 text-primary"
                             }
                           >
@@ -2103,58 +2510,54 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
+                          <div className="flex items-center justify-end gap-2">
+                            {i.pending ? (
                               <Button
-                                size="icon"
+                                size="sm"
                                 variant="outline"
-                                aria-label={`Actions for ${i.applicant}`}
-                              >
-                                <MoreHorizontal className="h-3.5 w-3.5" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => toast(`Viewing interview — ${i.applicant}`)}
-                              >
-                                <Eye className="mr-2 h-3.5 w-3.5" /> View
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
                                 onClick={() => {
-                                  const nextStatus =
-                                    i.status === "Completed" ? "Scheduled" : "Completed";
-                                  setInterviews((prev) =>
-                                    prev.map((x) =>
-                                      x.id === i.id ? { ...x, status: nextStatus } : x,
-                                    ),
-                                  );
-                                  addAudit({
-                                    actionType:
-                                      nextStatus === "Completed"
-                                        ? "Interview Completed"
-                                        : "Status Change",
-                                    target: i.applicant,
-                                    module: "Interview Scheduling",
-                                    details:
-                                      nextStatus === "Completed"
-                                        ? `Interview on ${i.date} marked complete.`
-                                        : `Interview reopened to Scheduled status.`,
-                                  });
+                                  const a = rows.find((r) => r.name === i.applicant);
+                                  if (a) acceptAndSchedule(a);
                                 }}
                               >
-                                <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
-                                {i.status === "Completed" ? "Reopen" : "Mark completed"}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setCancelInterview(i)}>
-                                <XCircle className="mr-2 h-3.5 w-3.5 text-destructive" /> Cancel
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                <CalendarPlus className="mr-1.5 h-3.5 w-3.5" />
+                                Schedule
+                              </Button>
+                            ) : (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const a = rows.find((r) => r.name === i.applicant);
+                                    if (a) acceptAndSchedule(a);
+                                  }}
+                                >
+                                  <CalendarPlus className="mr-1.5 h-3.5 w-3.5" />
+                                  Reschedule
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                                  onClick={() =>
+                                    setCancelInterview(
+                                      interviews.find((x) => x.id === i.id) ?? null,
+                                    )
+                                  }
+                                >
+                                  <X className="mr-1.5 h-3.5 w-3.5" />
+                                  Cancel
+                                </Button>
+                              </>
+                            )}
+                          </div>
                         </TableCell>
-                      </TableRow>
+</TableRow>
                     ))}
                   </TableBody>
                 </Table>
+                </ListBody>
                 <TablePagination
                   page={interviewPage.page}
                   pageCount={interviewPage.pageCount}
@@ -2232,6 +2635,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
               </div>
 
               <div className="mt-4">
+                <ListBody>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -2389,6 +2793,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     )}
                   </TableBody>
                 </Table>
+                </ListBody>
                 <TablePagination
                   page={assessmentPage.page}
                   pageCount={assessmentPage.pageCount}
@@ -2487,6 +2892,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
               </div>
 
               <div className="mt-4 overflow-x-auto rounded-md border border-border">
+                <ListBody>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-secondary/40">
@@ -2575,6 +2981,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                     )}
                   </TableBody>
                 </Table>
+                </ListBody>
                 <TablePagination
                   page={auditPage.page}
                   pageCount={auditPage.pageCount}
@@ -3311,7 +3718,7 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
           }
         }}
       >
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle className="font-display text-2xl">Add Applicant</DialogTitle>
             <DialogDescription>
@@ -3319,8 +3726,8 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
               {addStep === 1
                 ? "choose how the resume will be screened"
                 : addStep === 2
-                  ? "upload the resume and run screening"
-                  : "confirm applicant details"}
+                  ? "upload the resume and enter applicant details"
+                  : "review the screening result"}
             </DialogDescription>
           </DialogHeader>
 
@@ -3410,6 +3817,38 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
                 </Select>
               </div>
 
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Full name</Label>
+                  <Input
+                    value={addForm.name}
+                    onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    value={addForm.email}
+                    onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Contact number</Label>
+                  <Input
+                    value={addForm.phone}
+                    onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Address</Label>
+                  <Input
+                    value={addForm.address}
+                    onChange={(e) => setAddForm({ ...addForm, address: e.target.value })}
+                  />
+                </div>
+              </div>
+
               <label className="flex cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed border-border bg-muted/40 p-8 text-center">
                 {addMethod === "image" ? (
                   <ImageIcon className="h-9 w-9 text-muted-foreground" />
@@ -3457,71 +3896,222 @@ export function ApplicantManagement({ role }: { role: "superadmin" | "admin" }) 
 
           {addStep === 3 && screenResult && (
             <div className="space-y-4">
-              <div className="rounded-md border border-border p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="eyebrow">Screening result</p>
-                    <Badge
-                      variant="outline"
-                      className={cn("mt-1", statusMeta[screenResult.status].className)}
-                    >
-                      {statusMeta[screenResult.status].label}
-                    </Badge>
+              <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
+                <div className="rounded-md border border-border bg-card">
+                  <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                    <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium">
+                      {addMethod === "image" ? (
+                        <ImageIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
+                      ) : (
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-primary" />
+                      )}
+                      <span className="truncate">
+                        {addFileName || `${addForm.name || "applicant"}_Resume`}
+                      </span>
+                    </span>
                   </div>
-                  <p className="font-display text-3xl font-semibold text-primary">
-                    {screenResult.score}%
-                  </p>
+                  <div className="flex h-[420px] items-center justify-center overflow-y-auto bg-muted/30 p-4">
+                    <div className="mx-auto aspect-[8.5/11] w-full max-w-[280px] space-y-3 rounded-sm border border-border bg-card p-4 shadow-sm">
+                      <div className="space-y-1 border-b border-border pb-2">
+                        <p className="text-sm font-semibold">{addForm.name || "—"}</p>
+                        <p className="text-[0.65rem] text-muted-foreground">
+                          {addForm.email || "—"} · {addForm.phone || "—"}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[0.6rem] font-semibold uppercase text-primary">
+                          Address
+                        </p>
+                        <p className="text-[0.6rem] text-muted-foreground">
+                          {addForm.address || "—"}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[0.6rem] font-semibold uppercase text-primary">
+                          Skills
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {screenResult.entities.slice(0, 4).map((e) => (
+                            <span
+                              key={e.label}
+                              className="rounded-full bg-secondary px-1.5 py-0.5 text-[0.55rem]"
+                            >
+                              {e.value}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-border px-3 py-1.5 text-[0.65rem] text-muted-foreground">
+                    <span>Page 1 of 1</span>
+                    <span>
+                      Mock preview — {addMethod === "image" ? "image / scan" : "document"}
+                    </span>
+                  </div>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {screenResult.entities.map((e) => (
-                    <Badge key={e.label} variant="secondary">
-                      <span className="mr-1 text-muted-foreground">{e.label}</span> {e.value}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                className="cursor-pointer"
-                onClick={() => {
-                  toast("Re-running resume analysis…");
-                  runScreening();
-                }}
-              >
-                <ScanLine className="mr-2 h-4 w-4" /> Retry analysis
-              </Button>
+                <div className="space-y-4">
+              {(() => {
+                const verdictCopy: Record<string, string> = {
+                  fit: "Strong match — meets or exceeds the requirements for this role.",
+                  "other-role":
+                    "Not the strongest fit here, but the profile suggests they'd do well in a different role.",
+                  credential:
+                    "Promising profile, but a required certification or credential couldn't be verified.",
+                  "not-fit": "Falls short of the core requirements for this role.",
+                };
+                const passed = screenResult.score >= passing;
+                const matched = (keywordLibrary[addForm.position] ?? []).filter((k) =>
+                  screenResult.entities.some((e) =>
+                    e.value.toLowerCase().includes(k.toLowerCase().split(" ")[0]!),
+                  ),
+                );
+                const missing = (keywordLibrary[addForm.position] ?? []).filter(
+                  (k) => !matched.includes(k),
+                );
+                const experience = screenResult.entities.filter((e) => e.label === "ORG");
+                const education = screenResult.entities.filter((e) => e.label === "EDU");
+                const skills = screenResult.entities.filter((e) => e.label === "SKILL");
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label>Full name</Label>
-                  <Input
-                    value={addForm.name}
-                    onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Email</Label>
-                  <Input
-                    type="email"
-                    value={addForm.email}
-                    onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Phone number</Label>
-                  <Input
-                    value={addForm.phone}
-                    onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Address</Label>
-                  <Input
-                    value={addForm.address}
-                    onChange={(e) => setAddForm({ ...addForm, address: e.target.value })}
-                  />
+                return (
+                  <>
+                    <p className="eyebrow">Resume Screening Result</p>
+                    {/* Score + verdict */}
+                    <div className="flex items-center gap-4 rounded-md border border-border p-4">
+                      <div className="text-center">
+                        <p className="font-display text-4xl font-semibold text-primary">
+                          {screenResult.score}%
+                        </p>
+                        <p className="eyebrow">Match score</p>
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className={statusMeta[screenResult.status].className}
+                          >
+                            {statusMeta[screenResult.status].label}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={
+                              passed
+                                ? "border-success/30 bg-success/10 text-success"
+                                : "border-destructive/30 bg-destructive/10 text-destructive"
+                            }
+                          >
+                            {passed ? "Passed threshold" : "Below threshold"}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {verdictCopy[screenResult.status]}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Keyword match */}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-md border border-success/30 bg-success/5 p-3">
+                        <p className="eyebrow mb-2 text-success">
+                          Matched keywords ({matched.length})
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {matched.length === 0 && (
+                            <span className="text-xs text-muted-foreground">None found</span>
+                          )}
+                          {matched.map((k) => (
+                            <Badge
+                              key={k}
+                              variant="outline"
+                              className="border-success/30 bg-success/10 text-success"
+                            >
+                              ✓ {k}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-border p-3">
+                        <p className="eyebrow mb-2 text-muted-foreground">
+                          Missing keywords ({missing.length})
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {missing.length === 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              All keywords covered
+                            </span>
+                          )}
+                          {missing.map((k) => (
+                            <Badge key={k} variant="outline" className="text-muted-foreground">
+                              ✕ {k}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Compact summary rows */}
+                    <div className="divide-y divide-border rounded-md border border-border">
+                      <div className="flex items-start justify-between gap-3 p-3">
+                        <p className="w-32 shrink-0 text-xs font-medium text-muted-foreground">
+                          Work experience
+                        </p>
+                        <p className="flex-1 text-sm">
+                          {experience.length > 0
+                            ? experience.map((e) => e.value).join(", ")
+                            : "No employer history detected"}
+                        </p>
+                      </div>
+                      <div className="flex items-start justify-between gap-3 p-3">
+                        <p className="w-32 shrink-0 text-xs font-medium text-muted-foreground">
+                          Education
+                        </p>
+                        <p className="flex-1 text-sm">
+                          {education.length > 0
+                            ? education.map((e) => e.value).join(", ")
+                            : "Not specified"}
+                        </p>
+                      </div>
+                      <div className="flex items-start justify-between gap-3 p-3">
+                        <p className="w-32 shrink-0 text-xs font-medium text-muted-foreground">
+                          Key skills
+                        </p>
+                        <p className="flex-1 text-sm">
+                          {skills.length > 0 ? skills.map((s) => s.value).join(", ") : "None listed"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Recommendation */}
+                    <div
+                      className={cn(
+                        "rounded-md border p-3 text-sm",
+                        passed
+                          ? "border-success/30 bg-success/10 text-success"
+                          : "border-destructive/30 bg-destructive/10 text-destructive",
+                      )}
+                    >
+                      <p className="font-medium">
+                        {passed
+                          ? "Recommendation: Move forward — accept and schedule an interview."
+                          : "Recommendation: Reject or refer to a better-matching role."}
+                      </p>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="cursor-pointer"
+                      onClick={() => {
+                        toast("Re-running resume analysis…");
+                        runScreening();
+                      }}
+                    >
+                      <ScanLine className="mr-2 h-4 w-4" /> Retry analysis
+                    </Button>
+                  </>
+                );
+              })()}
                 </div>
               </div>
 
