@@ -18,6 +18,7 @@ import {
   Smartphone,
   Trash2,
   UserPlus,
+  Users,
 } from "lucide-react";
 
 import { toast } from "sonner";
@@ -38,7 +39,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -191,6 +192,9 @@ export function UserManagement() {
 
   const [resetUser, setResetUser] = useState<SystemUser | null>(null);
   const [resetPassword, setResetPassword] = useState("");
+  const [confirmResetPassword, setConfirmResetPassword] = useState("");
+  const [pendingConfirmReset, setPendingConfirmReset] = useState(false);
+  const [pendingUnsavedResetExit, setPendingUnsavedResetExit] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newUser, setNewUser] = useState({
@@ -243,13 +247,24 @@ export function UserManagement() {
   const openReset = (u: SystemUser) => {
     setResetUser(u);
     setResetPassword("");
+    setConfirmResetPassword("");
   };
   const submitReset = () => {
     if (!resetUser) return;
+    if (!resetPassword) {
+      toast.error("Please enter a new password.");
+      return;
+    }
+    if (resetPassword !== confirmResetPassword) {
+      toast.error("Passwords do not match. Please re-enter for verification.");
+      return;
+    }
     toast.success(`Password reset for ${resetUser.username}`, {
-      description: resetPassword ? "New password saved." : "No password set.",
+      description: "New password saved and user verified.",
     });
     setResetUser(null);
+    setResetPassword("");
+    setConfirmResetPassword("");
   };
 
   const createUser = () => {
@@ -327,170 +342,193 @@ export function UserManagement() {
       </div>
 
       <Tabs defaultValue="users" className="mt-6">
-        <TabsList className="flex h-auto flex-wrap justify-start">
-          <TabsTrigger value="users">User List</TabsTrigger>
-          <TabsTrigger value="matrix">Permission Matrix</TabsTrigger>
-          <TabsTrigger value="auth">Authentication & Login Security</TabsTrigger>
+        <TabsList className="inline-flex h-11 items-center justify-start rounded-xl bg-muted/80 p-1 text-muted-foreground w-fit border border-border/70 shadow-2xs">
+          <TabsTrigger
+            value="users"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <Users className="h-4 w-4 text-primary" /> User List
+          </TabsTrigger>
+          <TabsTrigger
+            value="matrix"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <Shield className="h-4 w-4 text-primary" /> Permission Matrix
+          </TabsTrigger>
+          <TabsTrigger
+            value="auth"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <KeyRound className="h-4 w-4 text-primary" /> Authentication &amp; Login Security
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="mt-4">
-          <Card className="border-border/70">
-            <CardContent className="p-6">
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader className="border-b border-border/50 pb-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="font-display text-2xl font-semibold">System Users</h2>
-                <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm">
-                      <UserPlus className="mr-2 h-4 w-4" /> Create user
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle className="font-display text-2xl">
-                        Create User Account
-                      </DialogTitle>
-                    </DialogHeader>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Full name</Label>
-                        <Input
-                          value={newUser.name}
-                          onChange={(e) => setNewUser((p) => ({ ...p, name: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Username</Label>
-                        <Input
-                          value={newUser.username}
-                          onChange={(e) => setNewUser((p) => ({ ...p, username: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Email</Label>
-                        <Input
-                          type="email"
-                          value={newUser.email}
-                          onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Phone number</Label>
-                        <Input
-                          value={newUser.phone}
-                          onChange={(e) => setNewUser((p) => ({ ...p, phone: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Role</Label>
-                        <Select
-                          value={newUser.role}
-                          onValueChange={(v) =>
-                            setNewUser((p) => ({
-                              ...p,
-                              role: v,
-                              department: v === "Super Admin" ? "" : p.department,
-                            }))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select role" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {["Super Admin", "Admin", "Employee"].map((r) => (
-                              <SelectItem key={r} value={r}>
-                                {roleLabels[r as SystemUser["role"]]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {newUser.role !== "Super Admin" && (
+                <div>
+                  <CardTitle className="font-display text-xl font-semibold">System Users</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {filteredUsers.length} user account{filteredUsers.length !== 1 ? "s" : ""} registered
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative min-w-[14rem]">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      className="h-9 pl-8 text-xs bg-card shadow-2xs"
+                      placeholder="Search users…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </div>
+                  <Select value={roleFilter} onValueChange={setRoleFilter}>
+                    <SelectTrigger className="h-9 w-40 text-xs bg-card shadow-2xs">
+                      <SelectValue placeholder="Role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All roles</SelectItem>
+                      {["Super Admin", "Admin", "Employee"].map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {roleLabels[r as SystemUser["role"]]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-9 w-36 text-xs bg-card shadow-2xs">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      {["Active", "Suspended", "Disabled"].map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm">
+                        <UserPlus className="mr-2 h-4 w-4" /> Create user
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle className="font-display text-2xl">
+                          Create User Account
+                        </DialogTitle>
+                      </DialogHeader>
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <div className="space-y-2">
-                          <Label>Department</Label>
+                          <Label>Full name</Label>
+                          <Input
+                            value={newUser.name}
+                            onChange={(e) => setNewUser((p) => ({ ...p, name: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Username</Label>
+                          <Input
+                            value={newUser.username}
+                            onChange={(e) => setNewUser((p) => ({ ...p, username: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Email</Label>
+                          <Input
+                            type="email"
+                            value={newUser.email}
+                            onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Phone number</Label>
+                          <Input
+                            value={newUser.phone}
+                            onChange={(e) => setNewUser((p) => ({ ...p, phone: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Role</Label>
                           <Select
-                            value={newUser.department}
-                            onValueChange={(v) => setNewUser((p) => ({ ...p, department: v }))}
+                            value={newUser.role}
+                            onValueChange={(v) =>
+                              setNewUser((p) => ({
+                                ...p,
+                                role: v,
+                                department: v === "Super Admin" ? "" : p.department,
+                              }))
+                            }
                           >
                             <SelectTrigger>
-                              <SelectValue placeholder="Select" />
+                              <SelectValue placeholder="Select role" />
                             </SelectTrigger>
                             <SelectContent>
-                              {departments.map((d) => (
-                                <SelectItem key={d.code} value={d.name}>
-                                  {d.name}
+                              {["Super Admin", "Admin", "Employee"].map((r) => (
+                                <SelectItem key={r} value={r}>
+                                  {roleLabels[r as SystemUser["role"]]}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
-                      )}
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label>Password</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            type="text"
-                            value={newUser.password}
-                            onChange={(e) =>
-                              setNewUser((p) => ({ ...p, password: e.target.value }))
-                            }
-                            placeholder="Enter password"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() =>
-                              setNewUser((p) => ({ ...p, password: DEFAULT_PASSWORD }))
-                            }
-                          >
-                            Use default password
-                          </Button>
+                        {newUser.role !== "Super Admin" && (
+                          <div className="space-y-2">
+                            <Label>Department</Label>
+                            <Select
+                              value={newUser.department}
+                              onValueChange={(v) => setNewUser((p) => ({ ...p, department: v }))}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {departments.map((d) => (
+                                  <SelectItem key={d.code} value={d.name}>
+                                    {d.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        <div className="space-y-2 sm:col-span-2">
+                          <Label>Password</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              type="text"
+                              value={newUser.password}
+                              onChange={(e) =>
+                                setNewUser((p) => ({ ...p, password: e.target.value }))
+                              }
+                              placeholder="Enter password"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() =>
+                                setNewUser((p) => ({ ...p, password: DEFAULT_PASSWORD }))
+                              }
+                            >
+                              Use default password
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <DialogFooter>
-                      <Button onClick={createUser}>Create user</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <div className="relative w-full sm:w-64">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    className="pl-8"
-                    placeholder="Search users…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
+                      <DialogFooter>
+                        <Button onClick={createUser}>Create user</Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
-                <Select value={roleFilter} onValueChange={setRoleFilter}>
-                  <SelectTrigger className="w-44">
-                    <SelectValue placeholder="Role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All roles</SelectItem>
-                    {["Super Admin", "Admin", "Employee"].map((r) => (
-                      <SelectItem key={r} value={r}>
-                        {roleLabels[r as SystemUser["role"]]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-44">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    {["Active", "Suspended", "Disabled"].map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
+            </CardHeader>
+            <CardContent className="p-6 pt-4">
 
               <div className="mt-4 overflow-x-auto">
                 <Table>
@@ -1011,46 +1049,157 @@ export function UserManagement() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!resetUser} onOpenChange={(o) => !o && setResetUser(null)}>
+      <Dialog
+        open={!!resetUser}
+        onOpenChange={(o) => {
+          if (!o && (resetPassword || confirmResetPassword)) {
+            setPendingUnsavedResetExit(true);
+          } else {
+            setResetUser(null);
+            setResetPassword("");
+            setConfirmResetPassword("");
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Reset Password</DialogTitle>
+            <DialogTitle className="font-display text-2xl">Reset User Password</DialogTitle>
           </DialogHeader>
           {resetUser && (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Set a new password for{" "}
-                <span className="font-medium text-foreground">{resetUser.username}</span>.
+            <div className="space-y-4 py-2">
+              <p className="text-xs text-muted-foreground">
+                Specify a new password for account <strong className="text-foreground">{resetUser.username}</strong> ({resetUser.name}).
               </p>
-              <div className="space-y-2">
-                <Label>New password</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs">New Password</Label>
                 <div className="flex gap-2">
                   <Input
+                    type="password"
                     value={resetPassword}
                     onChange={(e) => setResetPassword(e.target.value)}
                     placeholder="Enter new password"
+                    className="text-xs"
                   />
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setResetPassword(generateDefaultPassword())}
+                    className="text-xs shrink-0"
+                    onClick={() => {
+                      const gen = generateDefaultPassword();
+                      setResetPassword(gen);
+                      setConfirmResetPassword(gen);
+                    }}
                   >
-                    Generate default password
+                    Generate Default
                   </Button>
                 </div>
               </div>
-              {resetPassword && (
-                <p className="rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
-                  {resetPassword}
+
+              {/* RE-ENTER NEW PASSWORD FOR VERIFICATION */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Re-enter New Password (Verification)</Label>
+                <Input
+                  type="password"
+                  value={confirmResetPassword}
+                  onChange={(e) => setConfirmResetPassword(e.target.value)}
+                  placeholder="Re-enter new password to confirm"
+                  className="text-xs"
+                />
+              </div>
+
+              {resetPassword && confirmResetPassword && resetPassword !== confirmResetPassword && (
+                <p className="text-xs text-destructive font-medium">
+                  Passwords do not match. Please ensure both fields match exactly.
+                </p>
+              )}
+
+              {resetPassword && confirmResetPassword && resetPassword === confirmResetPassword && (
+                <p className="text-xs text-success font-medium flex items-center gap-1.5">
+                  Passwords match successfully!
                 </p>
               )}
             </div>
           )}
           <DialogFooter>
-            <Button onClick={submitReset}>Reset password</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (resetPassword || confirmResetPassword) {
+                  setPendingUnsavedResetExit(true);
+                } else {
+                  setResetUser(null);
+                }
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!resetPassword) {
+                  toast.error("Please enter a new password.");
+                  return;
+                }
+                if (resetPassword !== confirmResetPassword) {
+                  toast.error("Passwords do not match. Please verify.");
+                  return;
+                }
+                setPendingConfirmReset(true);
+              }}
+            >
+              Reset Password
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* CONFIRM RESET PASSWORD SAVE */}
+      <AlertDialog open={pendingConfirmReset} onOpenChange={setPendingConfirmReset}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Password Reset</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to update the password for user <strong>{resetUser?.username}</strong>?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingConfirmReset(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                submitReset();
+                setPendingConfirmReset(false);
+              }}
+            >
+              Yes, Reset Password
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* CONFIRM UNSAVED EXIT */}
+      <AlertDialog open={pendingUnsavedResetExit} onOpenChange={setPendingUnsavedResetExit}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-amber-600">Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unconfirmed password entries. Are you sure you want to exit without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingUnsavedResetExit(false)}>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                setResetUser(null);
+                setResetPassword("");
+                setConfirmResetPassword("");
+                setPendingUnsavedResetExit(false);
+              }}
+            >
+              Discard &amp; Exit
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1209,22 +1358,17 @@ export function AuditLogs() {
                     Timestamp
                   </SortHead>
                   <SortHead sortKey="user" sort={sort} onSort={toggle}>
-                    User
+                    User &amp; Role
                   </SortHead>
-                  <SortHead sortKey="role" sort={sort} onSort={toggle}>
-                    Role
-                  </SortHead>
+                  <TableHead>Action Type</TableHead>
                   <SortHead sortKey="action" sort={sort} onSort={toggle}>
-                    Action
+                    Action Details
                   </SortHead>
                   <SortHead sortKey="module" sort={sort} onSort={toggle}>
                     Module
                   </SortHead>
                   <SortHead sortKey="device" sort={sort} onSort={toggle}>
-                    Device
-                  </SortHead>
-                  <SortHead sortKey="ipAddress" sort={sort} onSort={toggle}>
-                    IP
+                    Device &amp; IP
                   </SortHead>
                   <SortHead sortKey="severity" sort={sort} onSort={toggle}>
                     Severity
@@ -1232,35 +1376,69 @@ export function AuditLogs() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {auditPage.pageItems.map((a) => (
-                  <TableRow key={a.id}>
-                    <TableCell className="text-xs">{a.timestamp}</TableCell>
-                    <TableCell className="text-xs">{a.user}</TableCell>
-                    <TableCell className="text-xs">{a.role}</TableCell>
-                    <TableCell className="text-sm">{a.action}</TableCell>
-                    <TableCell className="text-xs">{a.module}</TableCell>
-                    <TableCell className="text-xs">{a.device}</TableCell>
-                    <TableCell className="font-mono text-xs">{a.ipAddress}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={
-                          a.severity === "Critical"
-                            ? "border-destructive/30 bg-destructive/15 text-destructive"
-                            : a.severity === "Warning"
-                              ? "border-warning/40 bg-warning/20 text-warning-foreground"
-                              : "border-border"
-                        }
-                      >
-                        {a.severity}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {auditPage.pageItems.map((a) => {
+                  const actLower = a.action.toLowerCase();
+                  const actionType: "Create" | "Update" | "Delete" | "Security" =
+                    actLower.includes("create") || actLower.includes("add") || actLower.includes("generate") || actLower.includes("regularized")
+                      ? "Create"
+                      : actLower.includes("delete") || actLower.includes("revoke") || actLower.includes("disable") || actLower.includes("exit") || actLower.includes("deactivated")
+                      ? "Delete"
+                      : actLower.includes("login") || actLower.includes("password") || actLower.includes("2fa") || actLower.includes("permission") || actLower.includes("policy") || actLower.includes("security")
+                      ? "Security"
+                      : "Update";
+
+                  const actionTypeTone =
+                    actionType === "Create"
+                      ? "border-success/40 bg-success/10 text-success"
+                      : actionType === "Delete"
+                      ? "border-destructive/40 bg-destructive/10 text-destructive"
+                      : actionType === "Security"
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-600"
+                      : "border-primary/40 bg-primary/10 text-primary";
+
+                  return (
+                    <TableRow key={a.id}>
+                      <TableCell className="text-xs text-muted-foreground">{a.timestamp}</TableCell>
+                      {/* USER & ROLE COLUMN */}
+                      <TableCell className="text-xs">
+                        <div className="font-semibold text-foreground">{a.user}</div>
+                        <Badge variant="outline" className="mt-0.5 text-[10px] py-0 h-4 border-border/60 text-muted-foreground font-normal">
+                          {a.role}
+                        </Badge>
+                      </TableCell>
+                      {/* ACTION TYPE CATEGORY COLUMN */}
+                      <TableCell>
+                        <Badge variant="outline" className={cn("text-[10px] font-semibold", actionTypeTone)}>
+                          {actionType}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs font-medium max-w-sm">{a.action}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{a.module}</TableCell>
+                      <TableCell className="text-xs">
+                        <div>{a.device}</div>
+                        <div className="font-mono text-[11px] text-muted-foreground">{a.ipAddress}</div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            a.severity === "Critical"
+                              ? "border-destructive/30 bg-destructive/15 text-destructive text-[10px]"
+                              : a.severity === "Warning"
+                              ? "border-warning/40 bg-warning/20 text-warning-foreground text-[10px]"
+                              : "border-border text-muted-foreground text-[10px]"
+                          }
+                        >
+                          {a.severity}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
                 {rows.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={7}
                       className="py-8 text-center text-sm text-muted-foreground"
                     >
                       No activity matches your filters.
@@ -1370,13 +1548,13 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
   const showBackup = role === "superadmin";
   const showSystemSecurity = role === "superadmin";
 
-  const [activeTab, setActiveTab] = useState<"notifications" | "security" | "company" | "preferences" | "backup">("notifications");
+  const [activeTab, setActiveTab] = useState<"notifications" | "security" | "company" | "preferences" | "backup">("security");
 
   const settingsTabs = [
-    { id: "notifications" as const, label: "Notifications", icon: Bell, desc: "Email, browser & SMS alert settings" },
     { id: "security" as const, label: "Login & Security", icon: Shield, desc: "Passwords, 2FA & lockout policy" },
-    ...(showCompany ? [{ id: "company" as const, label: "Company", icon: Building2, desc: "Property & organization profile" }] : []),
+    { id: "notifications" as const, label: "Notifications", icon: Bell, desc: "Email, browser & SMS alert settings" },
     { id: "preferences" as const, label: "Preferences", icon: SlidersHorizontal, desc: "Theme, date formats & language" },
+    ...(showCompany ? [{ id: "company" as const, label: "Company", icon: Building2, desc: "Property & organization profile" }] : []),
     ...(showBackup ? [{ id: "backup" as const, label: "Backup & Restore", icon: Database, desc: "Database snapshots & restore points" }] : []),
   ];
 

@@ -126,38 +126,29 @@ export function OrgChartModule({ role = "admin" }: { role?: Role }) {
         eyebrow="Core HCM · Human Capital Management"
         title="Organizational Structure & Employee Roster"
         description="Visualize reporting hierarchy, manage employee regularization & promotions, and track lifecycle transitions."
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant={activeTab === "org" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("org")}
-            >
-              <GitBranch className="mr-2 h-4 w-4" /> Org Chart
-            </Button>
-            <Button
-              variant={activeTab === "employees" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("employees")}
-            >
-              <Users className="mr-2 h-4 w-4" /> Employee List
-            </Button>
-            <Button
-              variant={activeTab === "logs" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("logs")}
-            >
-              <FileText className="mr-2 h-4 w-4" /> Lifecycle Logs
-            </Button>
-          </div>
-        }
       />
 
+      {/* ICON-STYLED TABS AT TOP OF SECTION */}
       <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 max-w-md bg-muted/60 p-1">
-          <TabsTrigger value="org">Org Chart</TabsTrigger>
-          <TabsTrigger value="employees">Employee List</TabsTrigger>
-          <TabsTrigger value="logs">Lifecycle Logs</TabsTrigger>
+        <TabsList className="inline-flex h-11 items-center justify-start rounded-xl bg-muted/80 p-1 text-muted-foreground w-fit border border-border/70 shadow-2xs">
+          <TabsTrigger
+            value="org"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <GitBranch className="h-4 w-4" /> Org Chart
+          </TabsTrigger>
+          <TabsTrigger
+            value="employees"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <Users className="h-4 w-4" /> Employee List
+          </TabsTrigger>
+          <TabsTrigger
+            value="logs"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <FileText className="h-4 w-4" /> Lifecycle Logs
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="org" className="space-y-6">
@@ -309,6 +300,12 @@ function EmployeeListManager({ role }: { role: Role }) {
   const [empStatusFilter, setEmpStatusFilter] = useState("all");
   const [empTypeFilter, setEmpTypeFilter] = useState("all");
 
+  // Acknowledged employee IDs — gates Regularize/Promote in the roster
+  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set());
+
+  // View All HR3 Recommendations dialog
+  const [showViewAllRecs, setShowViewAllRecs] = useState(false);
+
   // Selection & Modal States
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [viewingEmpInfo, setViewingEmpInfo] = useState<Employee | null>(null);
@@ -327,6 +324,18 @@ function EmployeeListManager({ role }: { role: Role }) {
   // Confirmation Alert Dialog States
   const [pendingConfirm, setPendingConfirm] = useState<{ type: "save_promote" | "save_exit" | "regularize"; data?: any } | null>(null);
   const [pendingUnsavedExit, setPendingUnsavedExit] = useState<{ target: "promote" | "exit" } | null>(null);
+
+  // Helpers: determine if an employee has a pending recommendation that needs acknowledgement
+  const hasPendingRec = (empId: string) =>
+    recommendations.some((r) => r.employeeId === empId && r.status === "Pending HR Action");
+
+  const isAcknowledged = (empId: string) => acknowledgedIds.has(empId);
+
+  // An employee's action buttons are accessible if:
+  // 1. Their recommendation has been acknowledged, OR
+  // 2. They have no pending recommendation at all (free-standing regular staff)
+  const canActOnEmployee = (empId: string) =>
+    isAcknowledged(empId) || !hasPendingRec(empId);
 
   const filteredEmployees = empList.filter((e) => {
     const q = empSearch.trim().toLowerCase();
@@ -484,9 +493,19 @@ function EmployeeListManager({ role }: { role: Role }) {
                 </p>
               </div>
             </div>
-            <Badge variant="outline" className="border-gold/50 bg-gold/10 text-gold-foreground text-xs">
-              HR3 Evaluation Sync Active
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="border-gold/50 bg-gold/10 text-gold-foreground text-xs">
+                HR3 Evaluation Sync Active
+              </Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-gold/50 text-gold-foreground hover:bg-gold/10"
+                onClick={() => setShowViewAllRecs(true)}
+              >
+                View All
+              </Button>
+            </div>
           </div>
         </CardHeader>
 
@@ -499,6 +518,8 @@ function EmployeeListManager({ role }: { role: Role }) {
                   "flex flex-col justify-between rounded-lg border p-3.5 transition-all",
                   rec.status === "Approved & Processed"
                     ? "border-success/30 bg-success/5 opacity-70"
+                    : acknowledgedIds.has(rec.employeeId)
+                    ? "border-primary/30 bg-primary/5 shadow-2xs"
                     : "border-border/80 bg-card hover:border-gold/60 shadow-2xs"
                 )}
               >
@@ -521,27 +542,27 @@ function EmployeeListManager({ role }: { role: Role }) {
                 </div>
 
                 <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-2.5">
-                  <span className="text-[11px] text-muted-foreground">{rec.status}</span>
-                  {rec.status === "Pending HR Action" && (
+                  <span className="text-[11px] text-muted-foreground">
+                    {acknowledgedIds.has(rec.employeeId) && rec.status === "Pending HR Action"
+                      ? "Acknowledged — ready for action"
+                      : rec.status}
+                  </span>
+                  {rec.status === "Pending HR Action" && !acknowledgedIds.has(rec.employeeId) && (
                     <Button
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs border-gold/50 text-gold-foreground hover:bg-gold/10"
                       onClick={() => {
-                        const target = empList.find((e) => e.id === rec.employeeId);
-                        if (!target) return;
-                        if (rec.recommendationType === "Regularization") {
-                          setPendingConfirm({ type: "regularize", data: target });
-                        } else {
-                          setSelectedEmp(target);
-                          setNewPosition(rec.suggestedPosition || target.position);
-                          setNewSalaryGrade(rec.suggestedSalaryGrade || "SG-10");
-                          setShowPromoteModal(true);
-                        }
+                        setAcknowledgedIds((prev) => new Set([...prev, rec.employeeId]));
                       }}
                     >
-                      Apply Action
+                      <UserCheck className="mr-1 h-3.5 w-3.5" /> Acknowledge
                     </Button>
+                  )}
+                  {rec.status === "Pending HR Action" && acknowledgedIds.has(rec.employeeId) && (
+                    <Badge variant="outline" className="border-success/40 bg-success/10 text-success text-[10px]">
+                      ✓ Acknowledged
+                    </Badge>
                   )}
                 </div>
               </div>
@@ -549,6 +570,76 @@ function EmployeeListManager({ role }: { role: Role }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* VIEW ALL HR3 RECOMMENDATIONS DIALOG */}
+      <Dialog open={showViewAllRecs} onOpenChange={setShowViewAllRecs}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-gold" />
+              All Performance &amp; Development Handoff Requests
+            </DialogTitle>
+            <DialogDescription>
+              Full list of HR3 evaluation recommendations sent to Core HCM for action.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-center">Score</TableHead>
+                  <TableHead>Comments</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recommendations.map((rec) => (
+                  <TableRow key={rec.id}>
+                    <TableCell className="font-semibold text-sm">{rec.employeeName}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{rec.department}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          rec.recommendationType === "Regularization"
+                            ? "border-primary/40 bg-primary/10 text-primary text-[10px]"
+                            : "border-gold/50 bg-gold/10 text-gold-foreground text-[10px]"
+                        }
+                      >
+                        {rec.recommendationType}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center font-mono text-xs font-semibold">{rec.evaluationScore}%</TableCell>
+                    <TableCell className="text-xs text-muted-foreground italic max-w-xs truncate">{rec.comments}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          rec.status === "Approved & Processed"
+                            ? "border-success/40 bg-success/10 text-success text-[10px]"
+                            : acknowledgedIds.has(rec.employeeId)
+                            ? "border-primary/40 bg-primary/10 text-primary text-[10px]"
+                            : "border-gold/40 text-gold text-[10px]"
+                        }
+                      >
+                        {acknowledgedIds.has(rec.employeeId) && rec.status === "Pending HR Action"
+                          ? "Acknowledged"
+                          : rec.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowViewAllRecs(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* MAIN EMPLOYEE ROSTER CARD */}
       <Card className="border-border/70 shadow-sm">
@@ -618,6 +709,7 @@ function EmployeeListManager({ role }: { role: Role }) {
                   <TableHead>Type</TableHead>
                   <TableHead>Date Hired</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="text-center">Details</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -660,18 +752,23 @@ function EmployeeListManager({ role }: { role: Role }) {
                         {e.status}
                       </Badge>
                     </TableCell>
+
+                    {/* DEDICATED COLUMN FOR VIEW INFO BUTTON */}
+                    <TableCell className="text-center">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 px-2.5 text-xs bg-muted/30 hover:bg-primary/10 hover:text-primary hover:border-primary/40"
+                        onClick={() => setViewingEmpInfo(e)}
+                      >
+                        <Info className="mr-1.5 h-3.5 w-3.5 text-primary" /> View Info
+                      </Button>
+                    </TableCell>
+
+                    {/* ACTIONS COLUMN — Regularize & Promote gated by acknowledgement */}
                     <TableCell className="text-right">
                       <div className="flex justify-end items-center gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-                          onClick={() => setViewingEmpInfo(e)}
-                        >
-                          <Info className="mr-1 h-3.5 w-3.5 text-primary" /> View Info
-                        </Button>
-
-                        {e.employmentType === "Probationary" && e.status === "Active" && (
+                        {e.employmentType === "Probationary" && e.status === "Active" && canActOnEmployee(e.id) && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -682,33 +779,40 @@ function EmployeeListManager({ role }: { role: Role }) {
                           </Button>
                         )}
 
+                        {/* PROMOTE — only for Active Regular employees, and only if acknowledged (or no pending rec) */}
+                        {e.status === "Active" && e.employmentType !== "Probationary" && canActOnEmployee(e.id) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-2 text-xs"
+                            onClick={() => {
+                              setSelectedEmp(e);
+                              setNewPosition(e.position);
+                              setNewSalaryGrade(e.salaryGrade || "SG-10");
+                              setShowPromoteModal(true);
+                            }}
+                          >
+                            <TrendingUp className="mr-1 h-3.5 w-3.5 text-primary" /> Promote
+                          </Button>
+                        )}
+
+                        {/* Locked hint when pending acknowledgement */}
+                        {e.status === "Active" && hasPendingRec(e.id) && !isAcknowledged(e.id) && (
+                          <span className="text-[10px] text-muted-foreground italic pr-1">Acknowledge first</span>
+                        )}
+
                         {e.status === "Active" && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 px-2 text-xs"
-                              onClick={() => {
-                                setSelectedEmp(e);
-                                setNewPosition(e.position);
-                                setNewSalaryGrade(e.salaryGrade || "SG-10");
-                                setShowPromoteModal(true);
-                              }}
-                            >
-                              <TrendingUp className="mr-1 h-3.5 w-3.5 text-primary" /> Promote
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 px-2 text-xs text-destructive hover:bg-destructive/10"
-                              onClick={() => {
-                                setSelectedEmp(e);
-                                setShowExitModal(true);
-                              }}
-                            >
-                              <UserX className="mr-1 h-3.5 w-3.5" /> Exit
-                            </Button>
-                          </>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-2 text-xs text-destructive hover:bg-destructive/10"
+                            onClick={() => {
+                              setSelectedEmp(e);
+                              setShowExitModal(true);
+                            }}
+                          >
+                            <UserX className="mr-1 h-3.5 w-3.5" /> Exit
+                          </Button>
                         )}
                       </div>
                     </TableCell>
@@ -1008,31 +1112,121 @@ function EmployeeListManager({ role }: { role: Role }) {
 }
 
 /* --- Lifecycle Logs Viewer Sub-Component --- */
+type LifecycleLog = {
+  id: string;
+  timestamp: string;
+  category: "Regularization" | "Promotion" | "Resignation" | "Termination" | "Retirement";
+  employeeName: string;
+  employeeId: string;
+  position: string;
+  department: string;
+  actor: string;
+  actorRole: string;
+  details: string;
+};
+
+const seedLifecycleLogs: LifecycleLog[] = [
+  {
+    id: "LC-2026-001",
+    timestamp: "2026-08-05 14:30",
+    category: "Regularization",
+    employeeName: "Camille Ortega",
+    employeeId: "EMP-0004",
+    position: "Guest Relations Officer",
+    department: "Front Office",
+    actor: "Bullseur Santiago",
+    actorRole: "HR Admin",
+    details: "Passed HR3 6-month evaluation score 94.8%. Status upgraded from Probationary to Regular.",
+  },
+  {
+    id: "LC-2026-002",
+    timestamp: "2026-08-04 11:15",
+    category: "Promotion",
+    employeeName: "Marjun Devera",
+    employeeId: "EMP-0006",
+    position: "F&B Captain / Service Supervisor",
+    department: "Food & Beverage",
+    actor: "Super Admin",
+    actorRole: "Super Admin",
+    details: "Promoted from F&B Attendant to F&B Captain (SG-10). Succession planning evaluation passed with distinction (96.5%).",
+  },
+  {
+    id: "LC-2026-003",
+    timestamp: "2026-08-02 09:45",
+    category: "Resignation",
+    employeeName: "Mark Anthony Santos",
+    employeeId: "EMP-0009",
+    position: "Night Auditor",
+    department: "Front Office",
+    actor: "Bullseur Santiago",
+    actorRole: "HR Admin",
+    details: "Voluntary resignation submitted with 30-day clearance notice. ESS portal user account deactivated.",
+  },
+  {
+    id: "LC-2026-004",
+    timestamp: "2026-07-29 16:00",
+    category: "Termination",
+    employeeName: "John Raymond Flores",
+    employeeId: "EMP-0012",
+    position: "Security Guard",
+    department: "Security",
+    actor: "Super Admin",
+    actorRole: "Super Admin",
+    details: "Employment contract terminated following HR performance & disciplinary review. System access revoked.",
+  },
+  {
+    id: "LC-2026-005",
+    timestamp: "2026-07-25 10:20",
+    category: "Retirement",
+    employeeName: "Lourdes Bautista",
+    employeeId: "EMP-0003",
+    position: "Executive Housekeeper",
+    department: "Housekeeping",
+    actor: "Bullseur Santiago",
+    actorRole: "HR Admin",
+    details: "Statutory age retirement processed after 25 years of service. Final pay calculation queued to Payroll.",
+  },
+];
+
 function LifecycleLogsViewer() {
   const [filterType, setFilterType] = useState("all");
+  const [filterDept, setFilterDept] = useState("all");
   const [search, setSearch] = useState("");
 
-  const lifecycleEntries = auditLogs.filter(
-    (log) =>
-      log.action.includes("Regularized") ||
-      log.action.includes("Promoted") ||
-      log.action.includes("Exit") ||
-      log.action.includes("Deactivated") ||
-      log.module === "Core HCM"
-  );
+  const deptOptions = Array.from(new Set(seedLifecycleLogs.map((l) => l.department))).sort();
 
-  const filteredLogs = lifecycleEntries.filter((log) => {
+  const filteredLogs = seedLifecycleLogs.filter((log) => {
     const q = search.toLowerCase();
-    const matchesSearch = !q || log.action.toLowerCase().includes(q) || log.user.toLowerCase().includes(q);
-    const matchesType =
-      filterType === "all" ||
-      (filterType === "Promoted" && log.action.includes("Promoted")) ||
-      (filterType === "Regularized" && log.action.includes("Regularized")) ||
-      (filterType === "Exit" && (log.action.includes("Exit") || log.action.includes("Deactivated")));
-    return matchesSearch && matchesType;
+    const matchesSearch =
+      !q ||
+      log.employeeName.toLowerCase().includes(q) ||
+      log.employeeId.toLowerCase().includes(q) ||
+      log.position.toLowerCase().includes(q) ||
+      log.department.toLowerCase().includes(q) ||
+      log.details.toLowerCase().includes(q);
+    const matchesType = filterType === "all" || log.category === filterType;
+    const matchesDept = filterDept === "all" || log.department === filterDept;
+    return matchesSearch && matchesType && matchesDept;
   });
 
   const page = usePagination(filteredLogs);
+
+  const getCategoryBadgeClass = (category: LifecycleLog["category"]) => {
+    switch (category) {
+      case "Regularization":
+        return "border-success/40 bg-success/10 text-success";
+      case "Promotion":
+        return "border-primary/40 bg-primary/10 text-primary";
+      case "Resignation":
+        return "border-amber-500/40 bg-amber-500/10 text-amber-600";
+      case "Termination":
+        return "border-destructive/40 bg-destructive/10 text-destructive";
+      case "Retirement":
+        return "border-purple-500/40 bg-purple-500/10 text-purple-600";
+      default:
+        return "border-border text-muted-foreground";
+    }
+  };
 
   return (
     <Card className="border-border/70 shadow-sm">
@@ -1041,25 +1235,41 @@ function LifecycleLogsViewer() {
           <div>
             <h2 className="font-display text-xl font-semibold">Lifecycle Transition Logs</h2>
             <p className="text-xs text-muted-foreground">
-              Audit log records of promotions, regularizations, and employee exit separations.
+              Audit log records of employee regularizations, promotions, resignations, terminations, and retirements.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Input
-              placeholder="Search employee or action…"
-              className="h-9 w-52 text-xs bg-card"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <div className="relative min-w-[14rem]">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search employee, position, action details…"
+                className="h-9 pl-8 text-xs bg-card"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <Select value={filterDept} onValueChange={setFilterDept}>
+              <SelectTrigger className="h-9 w-44 text-xs bg-card">
+                <SelectValue placeholder="All departments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All departments</SelectItem>
+                {deptOptions.map((d) => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={filterType} onValueChange={setFilterType}>
-              <SelectTrigger className="h-9 w-40 text-xs bg-card">
-                <SelectValue placeholder="All events" />
+              <SelectTrigger className="h-9 w-44 text-xs bg-card">
+                <SelectValue placeholder="All event categories" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All lifecycle events</SelectItem>
-                <SelectItem value="Regularized">Regularization</SelectItem>
-                <SelectItem value="Promoted">Promotion</SelectItem>
-                <SelectItem value="Exit">Exits &amp; Separations</SelectItem>
+                <SelectItem value="Regularization">Regularization</SelectItem>
+                <SelectItem value="Promotion">Promotion</SelectItem>
+                <SelectItem value="Resignation">Resignation</SelectItem>
+                <SelectItem value="Termination">Termination</SelectItem>
+                <SelectItem value="Retirement">Retirement</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1071,10 +1281,11 @@ function LifecycleLogsViewer() {
               <TableRow>
                 <TableHead>Log ID</TableHead>
                 <TableHead>Timestamp</TableHead>
-                <TableHead>Actor / Role</TableHead>
-                <TableHead>Action Details</TableHead>
-                <TableHead>Department</TableHead>
-                <TableHead>Severity</TableHead>
+                <TableHead>Action Category</TableHead>
+                <TableHead>Target Employee (Status Changed)</TableHead>
+                <TableHead>Position &amp; Department</TableHead>
+                <TableHead>HR Admin / Actor</TableHead>
+                <TableHead>Action Details &amp; Justification</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1082,30 +1293,30 @@ function LifecycleLogsViewer() {
                 <TableRow key={log.id}>
                   <TableCell className="font-mono text-xs font-medium">{log.id}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{log.timestamp}</TableCell>
-                  <TableCell className="text-xs">
-                    <span className="font-medium">{log.user}</span>
-                    <span className="text-muted-foreground block text-[11px]">{log.role}</span>
-                  </TableCell>
-                  <TableCell className="text-xs font-medium">{log.action}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{log.department}</TableCell>
                   <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        log.severity === "Warning" || log.severity === "Critical"
-                          ? "border-destructive/40 text-destructive text-[10px]"
-                          : "border-primary/40 text-primary text-[10px]"
-                      }
-                    >
-                      {log.severity}
+                    <Badge variant="outline" className={cn("text-[10px] font-semibold", getCategoryBadgeClass(log.category))}>
+                      {log.category}
                     </Badge>
                   </TableCell>
+                  <TableCell className="text-xs">
+                    <div className="font-semibold text-foreground">{log.employeeName}</div>
+                    <div className="font-mono text-[11px] text-muted-foreground">{log.employeeId}</div>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    <div className="font-medium">{log.position}</div>
+                    <div className="text-[11px] text-muted-foreground">{log.department}</div>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    <span className="font-medium">{log.actor}</span>
+                    <span className="text-muted-foreground block text-[11px]">{log.actorRole}</span>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-xs">{log.details}</TableCell>
                 </TableRow>
               ))}
               {filteredLogs.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-xs text-muted-foreground">
-                    No lifecycle transition log entries found.
+                  <TableCell colSpan={7} className="py-8 text-center text-xs text-muted-foreground">
+                    No matching lifecycle transition log entries found.
                   </TableCell>
                 </TableRow>
               )}
@@ -1140,38 +1351,29 @@ export function DeptPosModule({ role = "admin" }: { role?: Role }) {
         eyebrow="Core HCM · Organization Setup"
         title="Department, Position &amp; Salary Grade Management"
         description="Configure property departments, define position headcounts, manage salary grade structures, and approve requisitions."
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant={activeTab === "deptpos" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("deptpos")}
-            >
-              <Building2 className="mr-2 h-4 w-4" /> Dept &amp; Positions
-            </Button>
-            <Button
-              variant={activeTab === "salary" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("salary")}
-            >
-              <DollarSign className="mr-2 h-4 w-4" /> Salary Grades
-            </Button>
-            <Button
-              variant={activeTab === "reqs" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("reqs")}
-            >
-              <FileCheck className="mr-2 h-4 w-4" /> Requisitions
-            </Button>
-          </div>
-        }
       />
 
+      {/* ICON-STYLED TABS AT TOP OF SECTION */}
       <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 max-w-md bg-muted/60 p-1">
-          <TabsTrigger value="deptpos">Dept &amp; Position</TabsTrigger>
-          <TabsTrigger value="salary">Salary Grades</TabsTrigger>
-          <TabsTrigger value="reqs">Requisitions</TabsTrigger>
+        <TabsList className="inline-flex h-11 items-center justify-start rounded-xl bg-muted/80 p-1 text-muted-foreground w-fit border border-border/70 shadow-2xs">
+          <TabsTrigger
+            value="deptpos"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <Building2 className="h-4 w-4" /> Department and Position
+          </TabsTrigger>
+          <TabsTrigger
+            value="salary"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <DollarSign className="h-4 w-4" /> Salary Grade Management
+          </TabsTrigger>
+          <TabsTrigger
+            value="reqs"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <FileCheck className="h-4 w-4" /> Requisitions
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="deptpos" className="space-y-6">
@@ -1196,10 +1398,31 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
   const [posList, setPosList] = useState<Position[]>(seedPositions);
   const [sGrades] = useState<SalaryGrade[]>(seedSalaryGrades);
 
-  // NOT preselected! Shows ALL departments and ALL positions by default!
+  // Independent search bars per table
+  const [deptTableSearch, setDeptTableSearch] = useState("");
+  const [posTableSearch, setPosTableSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
 
-  // Modals & Form States
+  // Filtered lists
+  const filteredDepts = deptList.filter(
+    (d) =>
+      !deptTableSearch.trim() ||
+      d.name.toLowerCase().includes(deptTableSearch.toLowerCase()) ||
+      d.code.toLowerCase().includes(deptTableSearch.toLowerCase()) ||
+      d.head.toLowerCase().includes(deptTableSearch.toLowerCase())
+  );
+
+  const filteredPositions = posList.filter(
+    (p) =>
+      (deptFilter === "all" || p.department === deptFilter) &&
+      (!posTableSearch.trim() ||
+        p.title.toLowerCase().includes(posTableSearch.toLowerCase()) ||
+        p.id.toLowerCase().includes(posTableSearch.toLowerCase()) ||
+        p.department.toLowerCase().includes(posTableSearch.toLowerCase()))
+  );
+
+  const deptPage = usePagination(filteredDepts);
+  const posPage = usePagination(filteredPositions);
   const [editingDept, setEditingDept] = useState<Department | null>(null);
   const [editingPos, setEditingPos] = useState<Position | null>(null);
   const [isNewPos, setIsNewPos] = useState(false);
@@ -1227,15 +1450,13 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
     return posList.filter((p) => p.department === deptName).reduce((acc, curr) => acc + curr.filled, 0);
   };
 
-  // Helper: list candidate heads (Active employees, excluding heads of OTHER departments)
-  const candidateHeads = seedEmployees.filter(
-    (emp) => emp.status === "Active"
-  );
+  // Helper: list candidate heads strictly belonging to the SAME department
+  const getDeptSpecificHeads = (targetDeptName: string) => {
+    return seedEmployees.filter(
+      (emp) => emp.status === "Active" && emp.department === targetDeptName
+    );
+  };
 
-  // Filter positions
-  const filteredPositions = posList.filter(
-    (p) => deptFilter === "all" || p.department === deptFilter
-  );
 
   // Save Department Handler
   const executeSaveDepartment = () => {
@@ -1249,7 +1470,7 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
         code: deptCode,
         name: deptName,
         description: "",
-        head: deptHead || "Unassigned",
+        head: "Unassigned",
         staff: 0,
         openRequisitions: 0,
         budget: 0,
@@ -1258,7 +1479,7 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
       toast.success(`Department ${deptName} created.`);
     } else if (editingDept) {
       setDeptList((prev) =>
-        prev.map((d) => (d.code === editingDept.code ? { ...d, code: deptCode, name: deptName, head: deptHead } : d))
+        prev.map((d) => (d.code === editingDept.code ? { ...d, code: deptCode, name: deptName, head: deptHead || d.head } : d))
       );
       toast.success(`Department ${deptName} updated.`);
     }
@@ -1318,26 +1539,38 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
     <div className="space-y-8">
       {/* 1. DEPARTMENTS SECTION CARD */}
       <Card className="border-border/70 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 pb-4">
-          <div>
-            <CardTitle className="font-display text-xl font-semibold">Hotel &amp; Restaurant Departments</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Master department registry with dynamic staff aggregation from job positions.
-            </p>
+        <CardHeader className="border-b border-border/50 pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle className="font-display text-xl font-semibold">Hotel &amp; Restaurant Departments</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {filteredDepts.length} department{filteredDepts.length !== 1 ? "s" : ""} found
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-[14rem]">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search department, code, head…"
+                  className="h-9 pl-8 text-xs bg-card shadow-2xs"
+                  value={deptTableSearch}
+                  onChange={(e) => setDeptTableSearch(e.target.value)}
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setDeptCode(`DEP-0${deptList.length + 1}`);
+                  setDeptName("");
+                  setDeptHead("");
+                  setIsNewDept(true);
+                  setEditingDept({ code: "", name: "", description: "", head: "Unassigned", staff: 0, openRequisitions: 0, budget: 0 });
+                }}
+              >
+                <Plus className="mr-1.5 h-4 w-4" /> Add Department
+              </Button>
+            </div>
           </div>
-          {/* ADD DEPARTMENT BUTTON ASSOCIATED DIRECTLY IN DEPARTMENT CARD */}
-          <Button
-            size="sm"
-            onClick={() => {
-              setDeptCode(`DEP-0${deptList.length + 1}`);
-              setDeptName("");
-              setDeptHead("");
-              setIsNewDept(true);
-              setEditingDept({ code: "", name: "", description: "", head: "", staff: 0, openRequisitions: 0, budget: 0 });
-            }}
-          >
-            <Plus className="mr-1.5 h-4 w-4" /> Add Department
-          </Button>
         </CardHeader>
 
         <CardContent className="p-0">
@@ -1353,7 +1586,7 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {deptList.map((d) => {
+              {deptPage.pageItems.map((d) => {
                 const positionsUnder = posList.filter((p) => p.department === d.name);
                 const derivedStaff = getDerivedStaffCount(d.name);
 
@@ -1391,46 +1624,42 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
               })}
             </TableBody>
           </Table>
+          <div className="p-4 pt-2">
+            <TablePagination
+              page={deptPage.page}
+              pageCount={deptPage.pageCount}
+              from={deptPage.from}
+              to={deptPage.to}
+              total={deptPage.total}
+              label="departments"
+              onPageChange={deptPage.setPage}
+            />
+          </div>
         </CardContent>
       </Card>
 
       {/* 2. POSITIONS SECTION CARD */}
       <Card className="border-border/70 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 pb-4">
-          <div>
-            <CardTitle className="font-display text-xl font-semibold">Job Positions &amp; Salary Bands</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Define position titles, department assignments, headcount targets, and assigned salary grade structure.
-            </p>
-          </div>
-          {/* ADD POSITION BUTTON ASSOCIATED DIRECTLY IN POSITION CARD */}
-          <Button
-            size="sm"
-            onClick={() => {
-              setPosTitle("");
-              setPosDept(deptList[0]?.name || "Front Office");
-              setPosLevel("Rank & File");
-              setPosTarget("5");
-              setPosFilled("3");
-              setPosSGrade("SG-05");
-              setIsNewPos(true);
-              setEditingPos({ id: "", title: "", department: "", level: "Rank & File", headcount: 5, filled: 3, salaryBand: "" });
-            }}
-          >
-            <Plus className="mr-1.5 h-4 w-4" /> Add Position
-          </Button>
-        </CardHeader>
-
-        <CardContent className="p-6 space-y-4">
-          {/* FILTER DROPDOWN: DEFAULTS TO ALL DEPARTMENTS & ALL POSITIONS */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Filtered Position Roster
-            </span>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Filter by Dept:</span>
+        <CardHeader className="border-b border-border/50 pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle className="font-display text-xl font-semibold">Job Positions &amp; Salary Bands</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {filteredPositions.length} position{filteredPositions.length !== 1 ? "s" : ""} found
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[14rem]">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search title, ID, department…"
+                  className="h-9 pl-8 text-xs bg-card shadow-2xs"
+                  value={posTableSearch}
+                  onChange={(e) => setPosTableSearch(e.target.value)}
+                />
+              </div>
               <Select value={deptFilter} onValueChange={setDeptFilter}>
-                <SelectTrigger className="h-9 w-52 text-xs bg-card">
+                <SelectTrigger className="h-9 w-44 text-xs bg-card shadow-2xs">
                   <SelectValue placeholder="All departments" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1440,14 +1669,31 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
                   ))}
                 </SelectContent>
               </Select>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setPosTitle("");
+                  setPosDept(deptList[0]?.name || "Front Office");
+                  setPosLevel("Rank & File");
+                  setPosTarget("5");
+                  setPosFilled("3");
+                  setPosSGrade("SG-05");
+                  setIsNewPos(true);
+                  setEditingPos({ id: "", title: "", department: "", level: "Rank & File", headcount: 5, filled: 3, salaryBand: "" });
+                }}
+              >
+                <Plus className="mr-1.5 h-4 w-4" /> Add Position
+              </Button>
             </div>
           </div>
+        </CardHeader>
 
+        <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-24">POS ID</TableHead>
+                  <TableHead className="w-24 pl-6">POS ID</TableHead>
                   <TableHead>Job Position Title</TableHead>
                   <TableHead>Department</TableHead>
                   <TableHead>Level</TableHead>
@@ -1458,9 +1704,9 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredPositions.map((p) => (
+                {posPage.pageItems.map((p) => (
                   <TableRow key={p.id}>
-                    <TableCell className="font-mono text-xs font-medium">{p.id}</TableCell>
+                    <TableCell className="pl-6 font-mono text-xs font-medium">{p.id}</TableCell>
                     <TableCell className="font-medium">{p.title}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{p.department}</TableCell>
                     <TableCell>
@@ -1497,6 +1743,17 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
               </TableBody>
             </Table>
           </div>
+          <div className="p-4 pt-2">
+            <TablePagination
+              page={posPage.page}
+              pageCount={posPage.pageCount}
+              from={posPage.from}
+              to={posPage.to}
+              total={posPage.total}
+              label="positions"
+              onPageChange={posPage.setPage}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -1531,21 +1788,34 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
               </div>
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs">Department Head (Active Staff Only)</Label>
-              <Select value={deptHead} onValueChange={setDeptHead}>
-                <SelectTrigger className="text-xs">
-                  <SelectValue placeholder="Select active manager/supervisor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {candidateHeads.map((h) => (
-                    <SelectItem key={h.id} value={h.name}>
-                      {h.name} ({h.position} · {h.department})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* DEPARTMENT HEAD SELECTION: HIDDEN ON ADD NEW DEPT, STRICTLY FILTERED TO SAME DEPT ON EDIT */}
+            {!isNewDept && editingDept ? (
+              <div className="space-y-1">
+                <Label className="text-xs">Department Head (Active {editingDept.name} Staff Only)</Label>
+                {getDeptSpecificHeads(editingDept.name).length > 0 ? (
+                  <Select value={deptHead} onValueChange={setDeptHead}>
+                    <SelectTrigger className="text-xs">
+                      <SelectValue placeholder="Select active department head" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getDeptSpecificHeads(editingDept.name).map((h) => (
+                        <SelectItem key={h.id} value={h.name}>
+                          {h.name} ({h.position} · {h.department})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] text-amber-700">
+                    No active employees currently assigned to <strong>{editingDept.name}</strong>. Add or assign positions to this department first to designate a department head.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-md border border-primary/20 bg-primary/5 p-2.5 text-[11px] text-muted-foreground">
+                <strong>Department Head Assignment:</strong> A department head can be assigned after creation once active employees are assigned to this department.
+              </div>
+            )}
 
             {/* DYNAMIC ASSOCIATED POSITIONS LISTING */}
             <div className="space-y-1.5 rounded-lg border p-3 bg-muted/20">
@@ -1747,6 +2017,9 @@ function DepartmentAndPositionManager({ role }: { role: Role }) {
 /* --- Salary Grade Manager Sub-Component --- */
 function SalaryGradeManager() {
   const [grades, setGrades] = useState<SalaryGrade[]>(seedSalaryGrades);
+  const [sgSearch, setSgSearch] = useState("");
+  const [sgLevelFilter, setSgLevelFilter] = useState("all");
+
   const [editingSG, setEditingSG] = useState<SalaryGrade | null>(null);
   const [isNewSG, setIsNewSG] = useState(false);
 
@@ -1761,6 +2034,19 @@ function SalaryGradeManager() {
   // Confirmation Alert States
   const [pendingConfirmSave, setPendingConfirmSave] = useState(false);
   const [pendingDeleteSG, setPendingDeleteSG] = useState<SalaryGrade | null>(null);
+
+  const filteredGrades = grades.filter((g) => {
+    const q = sgSearch.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      g.code.toLowerCase().includes(q) ||
+      g.title.toLowerCase().includes(q) ||
+      g.level.toLowerCase().includes(q);
+    const matchesLevel = sgLevelFilter === "all" || g.level === sgLevelFilter;
+    return matchesSearch && matchesLevel;
+  });
+
+  const sgPage = usePagination(filteredGrades);
 
   const executeSaveGrade = () => {
     if (!sgCode || !sgTitle) {
@@ -1811,28 +2097,53 @@ function SalaryGradeManager() {
 
   return (
     <Card className="border-border/70 shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 pb-4">
-        <div>
-          <CardTitle className="font-display text-xl font-semibold">Salary Grade &amp; Compensation Management</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Configure dynamic salary grades, pay band ranges, and job level alignment.
-          </p>
+      <CardHeader className="border-b border-border/50 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <CardTitle className="font-display text-xl font-semibold">Salary Grade &amp; Compensation Management</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {filteredGrades.length} grade structure{filteredGrades.length !== 1 ? "s" : ""} found
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[14rem]">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search code, title, level…"
+                className="h-9 pl-8 text-xs bg-card shadow-2xs"
+                value={sgSearch}
+                onChange={(e) => setSgSearch(e.target.value)}
+              />
+            </div>
+            <Select value={sgLevelFilter} onValueChange={setSgLevelFilter}>
+              <SelectTrigger className="h-9 w-40 text-xs bg-card shadow-2xs">
+                <SelectValue placeholder="All job levels" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All job levels</SelectItem>
+                <SelectItem value="Rank & File">Rank &amp; File</SelectItem>
+                <SelectItem value="Supervisory">Supervisory</SelectItem>
+                <SelectItem value="Managerial">Managerial</SelectItem>
+                <SelectItem value="Executive">Executive</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              onClick={() => {
+                setSgCode(`SG-${grades.length + 10}`);
+                setSgTitle("New Grade Level");
+                setSgMin("25000");
+                setSgMax("35000");
+                setSgLevel("Supervisory");
+                setSgNotes("");
+                setIsNewSG(true);
+                setEditingSG({ id: "", code: "", title: "", minSalary: 25000, maxSalary: 35000, currency: "PHP", level: "Supervisory" });
+              }}
+            >
+              <Plus className="mr-1.5 h-4 w-4" /> Add Salary Grade
+            </Button>
+          </div>
         </div>
-        <Button
-          size="sm"
-          onClick={() => {
-            setSgCode(`SG-${grades.length + 10}`);
-            setSgTitle("New Grade Level");
-            setSgMin("25000");
-            setSgMax("35000");
-            setSgLevel("Supervisory");
-            setSgNotes("");
-            setIsNewSG(true);
-            setEditingSG({ id: "", code: "", title: "", minSalary: 25000, maxSalary: 35000, currency: "PHP", level: "Supervisory" });
-          }}
-        >
-          <Plus className="mr-1.5 h-4 w-4" /> Add Salary Grade
-        </Button>
       </CardHeader>
 
       <CardContent className="p-0">
@@ -1849,7 +2160,7 @@ function SalaryGradeManager() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {grades.map((sg) => (
+            {sgPage.pageItems.map((sg) => (
               <TableRow key={sg.id}>
                 <TableCell className="pl-6 font-mono text-xs font-semibold text-primary">{sg.code}</TableCell>
                 <TableCell className="font-medium text-xs">{sg.title}</TableCell>
@@ -1896,6 +2207,17 @@ function SalaryGradeManager() {
             ))}
           </TableBody>
         </Table>
+        <div className="p-4 pt-2">
+          <TablePagination
+            page={sgPage.page}
+            pageCount={sgPage.pageCount}
+            from={sgPage.from}
+            to={sgPage.to}
+            total={sgPage.total}
+            label="salary grades"
+            onPageChange={sgPage.setPage}
+          />
+        </div>
       </CardContent>
 
       {/* EDIT / ADD SALARY GRADE MODAL */}
@@ -2014,13 +2336,88 @@ function SalaryGradeManager() {
 /* --- Requisition Manager Sub-Component --- */
 function RequisitionManager() {
   const reqs = useRequisitions();
+  const [reqSearch, setReqSearch] = useState("");
+  const [reqDeptFilter, setReqDeptFilter] = useState("all");
+  const [reqStatusFilter, setReqStatusFilter] = useState("all");
+  const [reqUrgencyFilter, setReqUrgencyFilter] = useState("all");
+
+  const deptOptions = Array.from(new Set(reqs.map((r) => r.department))).sort();
+
+  const filteredReqs = reqs.filter((r) => {
+    const q = reqSearch.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      r.id.toLowerCase().includes(q) ||
+      r.position.toLowerCase().includes(q) ||
+      r.department.toLowerCase().includes(q) ||
+      r.justification.toLowerCase().includes(q);
+    const matchesDept = reqDeptFilter === "all" || r.department === reqDeptFilter;
+    const matchesStatus = reqStatusFilter === "all" || r.status === reqStatusFilter;
+    const matchesUrgency = reqUrgencyFilter === "all" || r.urgency.toLowerCase() === reqUrgencyFilter.toLowerCase();
+    return matchesSearch && matchesDept && matchesStatus && matchesUrgency;
+  });
+
+  const reqPage = usePagination(filteredReqs);
 
   return (
     <Card className="border-border/70 shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 pb-4">
-        <div>
-          <CardTitle className="font-display text-xl font-semibold">Vacancy Requisitions</CardTitle>
-          <p className="text-xs text-muted-foreground">Department requests for staff expansion or replacement hiring.</p>
+      <CardHeader className="border-b border-border/50 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <CardTitle className="font-display text-xl font-semibold">Vacancy Requisitions</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {filteredReqs.length} requisition{filteredReqs.length !== 1 ? "s" : ""} found
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[14rem]">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search requisitions, position, justification…"
+                className="h-9 pl-8 text-xs bg-card shadow-2xs"
+                value={reqSearch}
+                onChange={(e) => setReqSearch(e.target.value)}
+              />
+            </div>
+
+            <Select value={reqDeptFilter} onValueChange={setReqDeptFilter}>
+              <SelectTrigger className="h-9 w-40 text-xs bg-card shadow-2xs">
+                <SelectValue placeholder="All departments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All departments</SelectItem>
+                {deptOptions.map((d) => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={reqStatusFilter} onValueChange={setReqStatusFilter}>
+              <SelectTrigger className="h-9 w-32 text-xs bg-card shadow-2xs">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="Approved">Approved</SelectItem>
+                <SelectItem value="Converted">Converted</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={reqUrgencyFilter} onValueChange={setReqUrgencyFilter}>
+              <SelectTrigger className="h-9 w-32 text-xs bg-card shadow-2xs">
+                <SelectValue placeholder="All urgency" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All urgency</SelectItem>
+                <SelectItem value="High">High</SelectItem>
+                <SelectItem value="Urgent">Urgent</SelectItem>
+                <SelectItem value="Normal">Normal</SelectItem>
+                <SelectItem value="Low">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </CardHeader>
 
@@ -2038,14 +2435,21 @@ function RequisitionManager() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {reqs.map((r) => (
+            {reqPage.pageItems.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="pl-6 font-mono text-xs font-medium">{r.id}</TableCell>
                 <TableCell className="font-medium text-xs">{r.position}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{r.department}</TableCell>
                 <TableCell className="text-center font-mono text-xs">{r.count}</TableCell>
                 <TableCell className="text-xs">
-                  <Badge variant="outline" className="text-[10px]">
+                  <Badge
+                    variant="outline"
+                    className={
+                      r.urgency === "Urgent" || r.urgency === "High"
+                        ? "border-amber-500/40 bg-amber-500/10 text-amber-600 text-[10px]"
+                        : "border-border text-muted-foreground text-[10px]"
+                    }
+                  >
                     {r.urgency}
                   </Badge>
                 </TableCell>
@@ -2066,8 +2470,26 @@ function RequisitionManager() {
                 <TableCell className="text-right pr-6 text-xs text-muted-foreground">{r.requestedAt}</TableCell>
               </TableRow>
             ))}
+            {filteredReqs.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="py-8 text-center text-xs text-muted-foreground">
+                  No vacancy requisitions match your search and filter criteria.
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
+        <div className="p-4 pt-2">
+          <TablePagination
+            page={reqPage.page}
+            pageCount={reqPage.pageCount}
+            from={reqPage.from}
+            to={reqPage.to}
+            total={reqPage.total}
+            label="requisitions"
+            onPageChange={reqPage.setPage}
+          />
+        </div>
       </CardContent>
     </Card>
   );
