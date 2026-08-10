@@ -7,7 +7,7 @@ export type Requisition = {
   count: number;
   urgency: string;
   justification: string;
-  status: "Pending" | "Approved" | "Converted";
+  status: "Pending" | "Done" | "Converted";
   requestedAt: string;
 };
 
@@ -64,7 +64,7 @@ const seedRequisitions: Requisition[] = [
     urgency: "High",
     justification:
       "Perimeter patrol shifts are currently single-manned; two additional officers restore the standard two-person rotation.",
-    status: "Approved",
+    status: "Done",
     requestedAt: "2024-04-20",
   },
   {
@@ -104,7 +104,7 @@ const seedRequisitions: Requisition[] = [
     count: 1,
     urgency: "High",
     justification: "Additional shift supervisor required to oversee the expanded night cleaning crew.",
-    status: "Approved",
+    status: "Done",
     requestedAt: "2024-04-05",
   },
   {

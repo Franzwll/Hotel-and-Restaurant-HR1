@@ -1,12 +1,20 @@
 import { useState } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
+  CircleCheckBig,
   ClipboardList,
   Cog,
+  Eye,
   FileText,
+  ListChecks,
+  Lock,
+  LockOpen,
   Plus,
   RotateCcw,
   Search,
+  Settings2,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -50,12 +58,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   essRequests as seed,
-  requestCategories,
   essActivityLog,
+  useEssCategories,
+  addCategoryEntry,
+  updateCategoryEntry,
+  removeCategoryEntry,
+  setCategoryOpen,
   type ESSRequest,
 } from "@/data/ess";
 import { departments, employees } from "@/data/hr";
 import { useSort, SortHead } from "@/components/portal/sortable";
+import { ListBody } from "@/components/portal/ListBody";
+import { ListEmptyState } from "@/components/portal/ListEmptyState";
 
 type Status = ESSRequest["status"] | "Returned for Clarification";
 type Row = Omit<ESSRequest, "status" | "note"> & {
@@ -87,6 +101,28 @@ const reportOptions = [
 
 export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
   const [rows, setRows] = useState<Row[]>(seed);
+  const categories = useEssCategories();
+  const [newCategory, setNewCategory] = useState<{
+    name: string;
+    description: string;
+    types: string[];
+  }>({
+    name: "",
+    description: "",
+    types: [],
+  });
+  const [newTypeInput, setNewTypeInput] = useState("");
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{
+    name: string;
+    description: string;
+    types: string[];
+  }>({
+    name: "",
+    description: "",
+    types: [],
+  });
+  const [editTypeInput, setEditTypeInput] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
@@ -100,6 +136,9 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [behalfDept, setBehalfDept] = useState("all");
+  const [behalfCategory, setBehalfCategory] = useState("");
+  /** Collapsible new-category panel at the top of Category Management. */
+  const [newCategoryOpen, setNewCategoryOpen] = useState(false);
 
   const filtered = rows.filter((r) => {
     if (dept !== "all" && r.department !== dept) return false;
@@ -193,6 +232,83 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
     setSelected([]);
   };
 
+  const addCategory = () => {
+    if (!newCategory.name.trim()) {
+      toast.error("Category name is required");
+      return;
+    }
+    if (categories.some((c) => c.name.toLowerCase() === newCategory.name.trim().toLowerCase())) {
+      toast.error("A category with this name already exists");
+      return;
+    }
+    addCategoryEntry({
+      name: newCategory.name.trim(),
+      description: newCategory.description.trim(),
+      types: newCategory.types,
+    });
+    setNewCategory({ name: "", description: "", types: [] });
+    setNewTypeInput("");
+    toast.success("Category added");
+  };
+
+  const addNewCategoryType = () => {
+    const t = newTypeInput.trim();
+    if (!t) return;
+    if (newCategory.types.some((x) => x.toLowerCase() === t.toLowerCase())) {
+      setNewTypeInput("");
+      return;
+    }
+    setNewCategory((p) => ({ ...p, types: [...p.types, t] }));
+    setNewTypeInput("");
+  };
+
+  const removeNewCategoryType = (t: string) =>
+    setNewCategory((p) => ({ ...p, types: p.types.filter((x) => x !== t) }));
+
+  const addEditCategoryType = () => {
+    const t = editTypeInput.trim();
+    if (!t) return;
+    if (editDraft.types.some((x) => x.toLowerCase() === t.toLowerCase())) {
+      setEditTypeInput("");
+      return;
+    }
+    setEditDraft((p) => ({ ...p, types: [...p.types, t] }));
+    setEditTypeInput("");
+  };
+
+  const removeEditCategoryType = (t: string) =>
+    setEditDraft((p) => ({ ...p, types: p.types.filter((x) => x !== t) }));
+
+  const startEditCategory = (c: { name: string; description: string; types: string[] }) => {
+    setEditingCategory(c.name);
+    setEditDraft({ name: c.name, description: c.description, types: [...c.types] });
+    setEditTypeInput("");
+  };
+
+  const cancelEditCategory = () => setEditingCategory(null);
+
+  const saveEditCategory = () => {
+    if (!editingCategory) return;
+    if (!editDraft.name.trim()) {
+      toast.error("Category name is required");
+      return;
+    }
+    updateCategoryEntry(editingCategory, {
+      name: editDraft.name.trim(),
+      description: editDraft.description.trim(),
+      types: editDraft.types,
+    });
+    if (category === editingCategory) setCategory(editDraft.name.trim());
+    setEditingCategory(null);
+    toast.success("Category updated");
+  };
+
+  const removeCategory = (name: string) => {
+    removeCategoryEntry(name);
+    if (category === name) setCategory("all");
+    toast.success("Category removed");
+  };
+
   const count = (s: Status) => rows.filter((r) => r.status === s).length;
 
   const reviewRow = rows.find((r) => r.id === reviewId) ?? null;
@@ -274,12 +390,14 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
         <StatCard
           label="Pending"
           value={count("Pending")}
+          icon={ClipboardList}
           tone="caution"
           onClick={() => setStatus("Pending")}
         />
         <StatCard
           label="Under Review"
           value={count("Under Review")}
+          icon={Eye}
           tone="gold"
           onClick={() => setStatus("Under Review")}
         />
@@ -293,12 +411,14 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
         <StatCard
           label="Approved"
           value={count("Approved")}
+          icon={CheckCircle2}
           tone="success"
           onClick={() => setStatus("Approved")}
         />
         <StatCard
           label="Completed"
           value={count("Completed")}
+          icon={CircleCheckBig}
           onClick={() => setStatus("Completed")}
         />
       </div>
@@ -364,7 +484,7 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All categories</SelectItem>
-                      {requestCategories.map((c) => (
+                      {categories.map((c) => (
                         <SelectItem key={c.name} value={c.name}>
                           {c.name}
                         </SelectItem>
@@ -376,19 +496,21 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                     <>
                       <Button
                         size="sm"
-                        className="bg-success text-success-foreground shadow hover:bg-success/90"
+                        variant="outline"
+                        className="border-success/40 bg-success/10 text-success hover:bg-success/20 hover:text-success"
                         disabled={selected.length === 0}
                         onClick={() => bulk("Approved")}
                       >
-                        Bulk approve
+                        <CheckCircle2 className="mr-2 h-4 w-4" /> Bulk approve
                       </Button>
                       <Button
                         size="sm"
-                        variant="destructive"
+                        variant="outline"
+                        className="border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
                         disabled={selected.length === 0}
                         onClick={() => bulk("Rejected")}
                       >
-                        Bulk reject
+                        <XCircle className="mr-2 h-4 w-4" /> Bulk reject
                       </Button>
                     </>
                   )}
@@ -439,12 +561,12 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                         </div>
                         <div className="space-y-2">
                           <Label>Request category</Label>
-                          <Select>
+                          <Select value={behalfCategory} onValueChange={setBehalfCategory}>
                             <SelectTrigger>
                               <SelectValue placeholder="Select category" />
                             </SelectTrigger>
                             <SelectContent>
-                              {requestCategories.map((c) => (
+                              {categories.map((c) => (
                                 <SelectItem key={c.name} value={c.name}>
                                   {c.name}
                                 </SelectItem>
@@ -454,7 +576,13 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                         </div>
                         <div className="space-y-2">
                           <Label>Details</Label>
-                          <Textarea rows={3} placeholder="Walk-in / phone request details…" />
+                          <Textarea
+                            rows={3}
+                            placeholder={
+                              categories.find((c) => c.name === behalfCategory)?.description ||
+                              "Walk-in / phone request details…"
+                            }
+                          />
                         </div>
                       </div>
                       <DialogFooter>
@@ -470,123 +598,134 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
               </div>
 
               <div className="mt-4 overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {role === "superadmin" && <TableHead className="w-10" />}
-                      <SortHead sortKey="id" sort={rowSort} onSort={toggleRowSort}>
-                        Request
-                      </SortHead>
-                      <SortHead sortKey="employee" sort={rowSort} onSort={toggleRowSort}>
-                        Employee
-                      </SortHead>
-                      <SortHead sortKey="type" sort={rowSort} onSort={toggleRowSort}>
-                        Category / Type
-                      </SortHead>
-                      <SortHead sortKey="filed" sort={rowSort} onSort={toggleRowSort}>
-                        Filed
-                      </SortHead>
-                      <SortHead sortKey="assignedTo" sort={rowSort} onSort={toggleRowSort}>
-                        Assigned To
-                      </SortHead>
-                      <SortHead sortKey="status" sort={rowSort} onSort={toggleRowSort}>
-                        Status
-                      </SortHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {requestPage.pageItems.map((r) => (
-                      <TableRow key={r.id}>
-                        {role === "superadmin" && (
-                          <TableCell>
-                            <Checkbox
-                              checked={selected.includes(r.id)}
-                              onCheckedChange={() =>
-                                setSelected((p) =>
-                                  p.includes(r.id) ? p.filter((x) => x !== r.id) : [...p, r.id],
-                                )
-                              }
-                            />
+                <ListBody>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {role === "superadmin" && <TableHead className="w-10" />}
+                        <SortHead sortKey="id" sort={rowSort} onSort={toggleRowSort}>
+                          Request
+                        </SortHead>
+                        <SortHead sortKey="employee" sort={rowSort} onSort={toggleRowSort}>
+                          Employee
+                        </SortHead>
+                        <SortHead sortKey="type" sort={rowSort} onSort={toggleRowSort}>
+                          Category / Type
+                        </SortHead>
+                        <SortHead sortKey="filed" sort={rowSort} onSort={toggleRowSort}>
+                          Filed
+                        </SortHead>
+                        <SortHead sortKey="assignedTo" sort={rowSort} onSort={toggleRowSort}>
+                          Assigned To
+                        </SortHead>
+                        <SortHead sortKey="status" sort={rowSort} onSort={toggleRowSort}>
+                          Status
+                        </SortHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {requestPage.pageItems.map((r) => (
+                        <TableRow key={r.id}>
+                          {role === "superadmin" && (
+                            <TableCell>
+                              <Checkbox
+                                checked={selected.includes(r.id)}
+                                onCheckedChange={() =>
+                                  setSelected((p) =>
+                                    p.includes(r.id) ? p.filter((x) => x !== r.id) : [...p, r.id],
+                                  )
+                                }
+                              />
+                            </TableCell>
+                          )}
+                          <TableCell className="text-xs font-medium">{r.id}</TableCell>
+                          <TableCell className="text-sm">
+                            <p>{r.employee}</p>
+                            <p className="text-xs text-muted-foreground">{r.department}</p>
                           </TableCell>
-                        )}
-                        <TableCell className="text-xs font-medium">{r.id}</TableCell>
-                        <TableCell className="text-sm">
-                          <p>{r.employee}</p>
-                          <p className="text-xs text-muted-foreground">{r.department}</p>
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          <p>{r.type}</p>
-                          <p className="text-xs text-muted-foreground">{r.category}</p>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.filed}</TableCell>
-                        <TableCell className="text-xs">{r.assignedTo}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={statusClass[r.status]}>
-                            {r.status === "Returned for Clarification" ? "Returned" : r.status}
-                          </Badge>
-                          {r.status === "Returned for Clarification" && (
-                            <p className="mt-1 text-[11px] text-muted-foreground">
-                              Awaiting employee response
-                            </p>
-                          )}
-                          {(r.returnedCount ?? 0) > 1 && (
-                            <p className="mt-1 text-[11px] text-caution">
-                              Returned {r.returnedCount}×
-                            </p>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-1">
-                            {r.status === "Returned for Clarification" ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => employeeReplied(r.id)}
-                              >
-                                <RotateCcw className="mr-2 h-4 w-4" /> Employee replied
-                              </Button>
-                            ) : r.status === "Pending" || r.status === "Under Review" ? (
-                              <>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  title="Approve"
-                                  onClick={() => {
-                                    setReqStatus(r.id, "Approved");
-                                    toast.success(`${r.id} approved`);
-                                  }}
-                                >
-                                  <CheckCircle2 className="h-4 w-4 text-success" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  title="Reject (opens review — a reason is required)"
-                                  onClick={() => {
-                                    openReview(r.id);
-                                    setReviewDecision("Rejected");
-                                  }}
-                                >
-                                  <XCircle className="h-4 w-4 text-destructive" />
-                                </Button>
+                          <TableCell className="text-sm">
+                            <p>{r.type}</p>
+                            <p className="text-xs text-muted-foreground">{r.category}</p>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{r.filed}</TableCell>
+                          <TableCell className="text-xs">{r.assignedTo}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={statusClass[r.status]}>
+                              {r.status === "Returned for Clarification" ? "Returned" : r.status}
+                            </Badge>
+                            {r.status === "Returned for Clarification" && (
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                Awaiting employee response
+                              </p>
+                            )}
+                            {(r.returnedCount ?? 0) > 1 && (
+                              <p className="mt-1 text-[11px] text-caution">
+                                Returned {r.returnedCount}×
+                              </p>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              {r.status === "Returned for Clarification" ? (
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => openReview(r.id)}
+                                  onClick={() => employeeReplied(r.id)}
                                 >
-                                  Review
+                                  <RotateCcw className="mr-2 h-4 w-4" /> Employee replied
                                 </Button>
-                              </>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Closed</span>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                              ) : r.status === "Pending" || r.status === "Under Review" ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-success/40 bg-success/10 text-success hover:bg-success/20 hover:text-success"
+                                    title="Approve"
+                                    onClick={() => {
+                                      setReqStatus(r.id, "Approved");
+                                      toast.success(`${r.id} approved`);
+                                    }}
+                                  >
+                                    <CheckCircle2 className="mr-2 h-4 w-4" /> Approve
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
+                                    title="Reject (opens review — a reason is required)"
+                                    onClick={() => {
+                                      openReview(r.id);
+                                      setReviewDecision("Rejected");
+                                    }}
+                                  >
+                                    <XCircle className="mr-2 h-4 w-4" /> Reject
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => openReview(r.id)}
+                                  >
+                                    <Eye className="mr-2 h-4 w-4" /> Review
+                                  </Button>
+                                </>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">Closed</span>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {requestPage.pageItems.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={role === "superadmin" ? 8 : 7} className="py-8">
+                            <ListEmptyState placeholder="Search employee or request…" />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </ListBody>
                 <TablePagination
                   page={requestPage.page}
                   pageCount={requestPage.pageCount}
@@ -605,25 +744,259 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
             <div className="grid gap-6 lg:grid-cols-2">
               <Card className="border-border/70">
                 <CardContent className="p-6">
-                  <h2 className="font-display text-2xl font-semibold">Request Types</h2>
-                  <p className="text-xs text-muted-foreground">
-                    Enable or disable request categories in the service catalog.
-                  </p>
-                  <div className="mt-4 space-y-2">
-                    {requestCategories.map((c) => (
-                      <div
-                        key={c.name}
-                        className="flex items-center justify-between rounded-md border border-border p-3"
-                      >
-                        <div>
-                          <p className="text-sm font-medium">{c.name}</p>
-                          <p className="text-[0.7rem] text-muted-foreground">
-                            {c.types.length} request types
-                          </p>
+                  <div>
+                    <h2 className="font-display text-2xl font-semibold">Category Management</h2>
+                    <p className="text-xs text-muted-foreground">
+                      Create, edit and remove ESS request categories. Description shows to employees
+                      as the request-form placeholder.
+                    </p>
+                  </div>
+                  <div className="mt-3 rounded-md border border-dashed border-border">
+                    <button
+                      type="button"
+                      onClick={() => setNewCategoryOpen((v) => !v)}
+                      aria-expanded={newCategoryOpen}
+                      className="flex w-full cursor-pointer items-center justify-between gap-2 p-3 text-left"
+                    >
+                      <span className="eyebrow flex items-center gap-1.5">
+                        <ListChecks className="h-3.5 w-3.5" /> New category
+                      </span>
+                      <ChevronDown
+                        className={`h-4 w-4 text-muted-foreground transition-transform ${
+                          newCategoryOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                    {newCategoryOpen && (
+                      <div className="space-y-2 border-t border-border/70 p-3">
+                        <Input
+                          className="h-8 text-sm"
+                          value={newCategory.name}
+                          onChange={(e) => setNewCategory((p) => ({ ...p, name: e.target.value }))}
+                          placeholder="Category name"
+                        />
+                        <Textarea
+                          rows={2}
+                          className="text-xs"
+                          value={newCategory.description}
+                          onChange={(e) =>
+                            setNewCategory((p) => ({ ...p, description: e.target.value }))
+                          }
+                          placeholder="Optional description — shown to employees as placeholder text"
+                        />
+                        <div className="space-y-1.5">
+                          <Label className="text-[0.7rem]">Request types</Label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {newCategory.types.map((t) => (
+                              <Badge key={t} variant="secondary" className="gap-1 text-[0.65rem]">
+                                {t}
+                                <button
+                                  type="button"
+                                  aria-label={`Remove ${t}`}
+                                  onClick={() => removeNewCategoryType(t)}
+                                  className="ml-0.5 rounded-full hover:text-destructive"
+                                >
+                                  <XCircle className="h-3 w-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                            {newCategory.types.length === 0 && (
+                              <span className="text-[0.65rem] text-muted-foreground">
+                                No types yet
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex gap-1.5">
+                            <Input
+                              className="h-7 text-xs"
+                              value={newTypeInput}
+                              onChange={(e) => setNewTypeInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  addNewCategoryType();
+                                }
+                              }}
+                              placeholder="Add a request type"
+                            />
+                            <Button size="sm" variant="outline" onClick={addNewCategoryType}>
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </div>
-                        <Switch defaultChecked />
+                        <Button size="sm" onClick={addCategory}>
+                          <Plus className="mr-2 h-3.5 w-3.5" /> Add category
+                        </Button>
                       </div>
-                    ))}
+                    )}
+                  </div>
+
+                  <div className="mt-3 space-y-1.5">
+                    {categories.map((c) =>
+                      editingCategory === c.name ? (
+                        <div
+                          key={c.name}
+                          className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-2.5"
+                        >
+                          <Input
+                            className="h-8 text-sm"
+                            value={editDraft.name}
+                            onChange={(e) => setEditDraft((p) => ({ ...p, name: e.target.value }))}
+                            placeholder="Category name"
+                          />
+                          <Textarea
+                            rows={2}
+                            className="text-xs"
+                            value={editDraft.description}
+                            onChange={(e) =>
+                              setEditDraft((p) => ({ ...p, description: e.target.value }))
+                            }
+                            placeholder="Optional description shown to employees"
+                          />
+                          <div className="space-y-1.5">
+                            <Label className="text-[0.7rem]">Request types</Label>
+                            <div className="flex flex-wrap gap-1.5">
+                              {editDraft.types.map((t) => (
+                                <Badge key={t} variant="secondary" className="gap-1 text-[0.65rem]">
+                                  {t}
+                                  <button
+                                    type="button"
+                                    aria-label={`Remove ${t}`}
+                                    onClick={() => removeEditCategoryType(t)}
+                                    className="ml-0.5 rounded-full hover:text-destructive"
+                                  >
+                                    <XCircle className="h-3 w-3" />
+                                  </button>
+                                </Badge>
+                              ))}
+                              {editDraft.types.length === 0 && (
+                                <span className="text-[0.65rem] text-muted-foreground">
+                                  No types yet
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-1.5">
+                              <Input
+                                className="h-7 text-xs"
+                                value={editTypeInput}
+                                onChange={(e) => setEditTypeInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    addEditCategoryType();
+                                  }
+                                }}
+                                placeholder="Add a request type"
+                              />
+                              <Button size="sm" variant="outline" onClick={addEditCategoryType}>
+                                <Plus className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="outline" onClick={cancelEditCategory}>
+                              Cancel
+                            </Button>
+                            <Button size="sm" onClick={saveEditCategory}>
+                              Save
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          key={c.name}
+                          className={`flex flex-wrap items-center justify-between gap-2 rounded-md border p-2.5 ${
+                            c.open === false ? "border-border bg-muted/40" : "border-border"
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <p className="flex items-center gap-1.5 text-sm font-medium">
+                              <span className="truncate">{c.name}</span>
+                              {c.custom && (
+                                <Badge variant="secondary" className="shrink-0 text-[0.6rem]">
+                                  Custom
+                                </Badge>
+                              )}
+                              {c.open === false && (
+                                <Badge
+                                  variant="outline"
+                                  className="shrink-0 border-destructive/30 bg-destructive/10 text-[0.6rem] text-destructive"
+                                >
+                                  Closed
+                                </Badge>
+                              )}
+                            </p>
+                            <p className="truncate text-[0.7rem] text-muted-foreground">
+                              {c.description || "No description"}
+                            </p>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {c.types.length > 0 ? (
+                                c.types.map((t) => (
+                                  <Badge
+                                    key={t}
+                                    variant="outline"
+                                    className="text-[0.6rem] font-normal"
+                                  >
+                                    {t}
+                                  </Badge>
+                                ))
+                              ) : (
+                                <span className="text-[0.6rem] text-muted-foreground">
+                                  No request types
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label={`Edit ${c.name}`}
+                              onClick={() => startEditCategory(c)}
+                            >
+                              <Settings2 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className={c.open === false ? "text-destructive" : "text-success"}
+                              aria-label={
+                                c.open === false
+                                  ? `Open ${c.name} for requests`
+                                  : `Close ${c.name} for requests`
+                              }
+                              title={
+                                c.open === false
+                                  ? "Closed — click to accept new requests"
+                                  : "Open — click to stop accepting new requests"
+                              }
+                              onClick={() => {
+                                const next = c.open === false;
+                                setCategoryOpen(c.name, next);
+                                toast.success(
+                                  next ? `${c.name} opened` : `${c.name} closed for new requests`,
+                                );
+                              }}
+                            >
+                              {c.open === false ? (
+                                <Lock className="h-3.5 w-3.5" />
+                              ) : (
+                                <LockOpen className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="text-destructive"
+                              aria-label={`Remove ${c.name}`}
+                              onClick={() => removeCategory(c.name)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ),
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -632,12 +1005,23 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                 <CardContent className="space-y-5 p-6">
                   <div>
                     <h2 className="font-display text-2xl font-semibold">
-                      Workflow, Policies &amp; SLA
+                      Request Management Settings
                     </h2>
                     <p className="text-xs text-muted-foreground">
-                      Approval routing, escalation and notification configuration.
+                      Intake rules, approval routing, SLA and notifications applied to every open
+                      category.
                     </p>
                   </div>
+
+                  <div className="rounded-md border border-border p-3">
+                    <p className="eyebrow">Intake</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {categories.filter((c) => c.open !== false).length} of {categories.length}{" "}
+                      categories are open for new requests. Close a category in the list to stop
+                      accepting requests without deleting it.
+                    </p>
+                  </div>
+
                   <div className="space-y-2">
                     <Label>Approval levels</Label>
                     <Select defaultValue="2">
@@ -664,6 +1048,7 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                   {[
                     "Auto-assign by department",
                     "Escalate on SLA breach",
+                    "Auto-close requests resolved for 7 days",
                     "Email notifications",
                     "In-system notifications",
                     "Require attachment for leave with pay",
@@ -738,58 +1123,66 @@ export function EssManagement({ role }: { role: "superadmin" | "admin" }) {
                       </SelectContent>
                     </Select>
                   </div>
-
                 </div>
                 <div className="mt-4 overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <SortHead sortKey="timestamp" sort={logSort} onSort={toggleLogSort}>
-                          Timestamp
-                        </SortHead>
-                        <SortHead sortKey="user" sort={logSort} onSort={toggleLogSort}>
-                          User
-                        </SortHead>
-                        <SortHead sortKey="action" sort={logSort} onSort={toggleLogSort}>
-                          Action
-                        </SortHead>
-                        <SortHead sortKey="module" sort={logSort} onSort={toggleLogSort}>
-                          Module
-                        </SortHead>
-                        <SortHead sortKey="category" sort={logSort} onSort={toggleLogSort}>
-                          Category / Type
-                        </SortHead>
-                        <SortHead sortKey="department" sort={logSort} onSort={toggleLogSort}>
-                          Department
-                        </SortHead>
-                        <SortHead sortKey="requestId" sort={logSort} onSort={toggleLogSort}>
-                          Request ID
-                        </SortHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {logPage.pageItems.map((a) => (
-                        <TableRow key={a.id}>
-                          <TableCell className="text-xs">{a.timestamp}</TableCell>
-                          <TableCell className="text-xs">{a.user}</TableCell>
-                          <TableCell className="text-sm">{a.action}</TableCell>
-                          <TableCell className="text-xs">{a.module}</TableCell>
-                          <TableCell className="text-xs">{a.category}</TableCell>
-                          <TableCell className="text-xs">{a.department}</TableCell>
-                          <TableCell className="text-xs font-medium">{a.requestId}</TableCell>
+                  <ListBody>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <SortHead sortKey="timestamp" sort={logSort} onSort={toggleLogSort}>
+                            Timestamp
+                          </SortHead>
+                          <SortHead sortKey="user" sort={logSort} onSort={toggleLogSort}>
+                            User
+                          </SortHead>
+                          <SortHead sortKey="action" sort={logSort} onSort={toggleLogSort}>
+                            Action
+                          </SortHead>
+                          <SortHead sortKey="module" sort={logSort} onSort={toggleLogSort}>
+                            Module
+                          </SortHead>
+                          <SortHead sortKey="category" sort={logSort} onSort={toggleLogSort}>
+                            Category / Type
+                          </SortHead>
+                          <SortHead sortKey="department" sort={logSort} onSort={toggleLogSort}>
+                            Department
+                          </SortHead>
+                          <SortHead sortKey="requestId" sort={logSort} onSort={toggleLogSort}>
+                            Request ID
+                          </SortHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                <TablePagination
-                  page={logPage.page}
-                  pageCount={logPage.pageCount}
-                  from={logPage.from}
-                  to={logPage.to}
-                  total={logPage.total}
-                  label="log entries"
-                  onPageChange={logPage.setPage}
-                />
+                      </TableHeader>
+                      <TableBody>
+                        {logPage.pageItems.map((a) => (
+                          <TableRow key={a.id}>
+                            <TableCell className="text-xs">{a.timestamp}</TableCell>
+                            <TableCell className="text-xs">{a.user}</TableCell>
+                            <TableCell className="text-sm">{a.action}</TableCell>
+                            <TableCell className="text-xs">{a.module}</TableCell>
+                            <TableCell className="text-xs">{a.category}</TableCell>
+                            <TableCell className="text-xs">{a.department}</TableCell>
+                            <TableCell className="text-xs font-medium">{a.requestId}</TableCell>
+                          </TableRow>
+                        ))}
+                        {logPage.pageItems.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={7} className="py-8">
+                              <ListEmptyState placeholder="Search user, action, request…" />
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </ListBody>
+                  <TablePagination
+                    page={logPage.page}
+                    pageCount={logPage.pageCount}
+                    from={logPage.from}
+                    to={logPage.to}
+                    total={logPage.total}
+                    label="log entries"
+                    onPageChange={logPage.setPage}
+                  />
                 </div>
               </CardContent>
             </Card>
