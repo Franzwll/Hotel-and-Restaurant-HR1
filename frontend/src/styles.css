@@ -192,6 +192,12 @@
   color: var(--color-muted-foreground);
 }
 
+/* Keeps a list/table card at a stable height no matter how many rows a
+   search returns (a full page is 10 rows). */
+@utility list-body {
+  min-height: 30rem;
+}
+
 @utility display-title {
   font-family: var(--font-display-family);
   font-weight: 600;
@@ -216,4 +222,31 @@
     font-family: var(--font-display-family);
     letter-spacing: -0.01em;
   }
+}
+
+/* Login hero: slow Ken Burns pans for the cinematic photo loop */
+@keyframes kb-a {
+  from { transform: scale(1.06) translate3d(0, 0, 0); }
+  to { transform: scale(1.16) translate3d(-1.5%, -1%, 0); }
+}
+@keyframes kb-b {
+  from { transform: scale(1.14) translate3d(1.5%, 1%, 0); }
+  to { transform: scale(1.04) translate3d(0, 0, 0); }
+}
+@keyframes kb-c {
+  from { transform: scale(1.08) translate3d(1%, -1%, 0); }
+  to { transform: scale(1.18) translate3d(-1%, 1%, 0); }
+}
+@keyframes hero-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+.kb-a { animation: kb-a 18s ease-in-out infinite alternate; }
+.kb-b { animation: kb-b 18s ease-in-out infinite alternate; }
+.kb-c { animation: kb-c 18s ease-in-out infinite alternate; }
+.hero-progress { animation: hero-progress 1.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-a, .kb-b, .kb-c, .hero-progress { animation: none; }
 }

@@ -50,6 +50,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { DEFAULT_PAGE_SIZE, usePagination } from "@/hooks/usePagination";
+import { ListBody } from "@/components/portal/ListBody";
 import { Textarea } from "@/components/ui/textarea";
 import {
   departments as seedDepartments,
@@ -138,7 +139,7 @@ function EmployeeListTab() {
             </Select>
           </div>
         </div>
-        <div className="mt-4 overflow-x-auto">
+        <ListBody className="mt-4 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -196,7 +197,7 @@ function EmployeeListTab() {
               )}
             </TableBody>
           </Table>
-        </div>
+        </ListBody>
         <TablePagination
           page={empPage.page}
           pageCount={empPage.pageCount}
@@ -513,7 +514,7 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
                 <p className="text-xs text-muted-foreground">
                   Select a department to view its job positions.
                 </p>
-                <div className="mt-3 overflow-x-auto rounded-md border border-border/70">
+                <ListBody className="mt-3 overflow-x-auto rounded-md border border-border/70">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -590,7 +591,7 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
                       )}
                     </TableBody>
                   </Table>
-                </div>
+                </ListBody>
                 <TablePagination
                   page={deptPage.page}
                   pageCount={deptPage.pageCount}
@@ -614,7 +615,7 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
                   {role !== "superadmin" && " Deletion is restricted to Super Admin."}
                 </p>
 
-                <div className="mt-3 overflow-x-auto rounded-md border border-border/70">
+                <ListBody className="mt-3 overflow-x-auto rounded-md border border-border/70">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -813,7 +814,7 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
                       )}
                     </TableBody>
                   </Table>
-                </div>
+                </ListBody>
                 <TablePagination
                   page={posPage.page}
                   pageCount={posPage.pageCount}
@@ -888,7 +889,7 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
                 </div>
               </div>
 
-              <div className="mt-4 overflow-x-auto rounded-md border border-border/70">
+              <ListBody className="mt-4 overflow-x-auto rounded-md border border-border/70">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -918,6 +919,7 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
                       <SortHead sortKey="requestedAt" sort={reqSort.sort} onSort={reqSort.toggle}>
                         Requested
                       </SortHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -943,7 +945,7 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
                           <Badge
                             variant="outline"
                             className={
-                              r.status === "Approved"
+                              r.status === "Done"
                                 ? "border-success/30 bg-success/15 text-success"
                                 : r.status === "Converted"
                                   ? "border-primary/30 bg-primary/10 text-primary"
@@ -954,12 +956,30 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground">{r.requestedAt}</TableCell>
+                        <TableCell className="text-right">
+                          {r.status === "Pending" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => requisitionStore.update(r.id, { status: "Done" })}
+                            >
+                              Mark as Done
+                            </Button>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="border-success/30 bg-success/15 text-success"
+                            >
+                              Done
+                            </Badge>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))}
                     {reqPageRows.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={7}
+                          colSpan={8}
                           className="py-6 text-center text-sm text-muted-foreground"
                         >
                           No requisitions match your filters.
@@ -968,7 +988,7 @@ export function CoreHCM({ role }: { role: "superadmin" | "admin" }) {
                     )}
                   </TableBody>
                 </Table>
-              </div>
+              </ListBody>
 
               <TablePagination
                 page={reqCurrentPage}

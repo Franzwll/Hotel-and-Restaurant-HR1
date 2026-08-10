@@ -1,15 +1,13 @@
 import { useState } from "react";
 import {
   Bell,
+  ArrowRight,
   Building2,
-  Clock,
   Database,
   Download,
-  Globe,
   KeyRound,
   Laptop,
   Monitor,
-  Palette,
   Plus,
   RotateCcw,
   Search,
@@ -78,6 +76,7 @@ import {
   type SystemUser,
 } from "@/data/users";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { ListBody } from "@/components/portal/ListBody";
 import { usePagination } from "@/hooks/usePagination";
 import { cn } from "@/lib/utils";
 import { departments, newHires } from "@/data/hr";
@@ -493,6 +492,7 @@ export function UserManagement() {
               </div>
 
               <div className="mt-4 overflow-x-auto">
+                <ListBody>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -599,6 +599,7 @@ export function UserManagement() {
                     )}
                   </TableBody>
                 </Table>
+                </ListBody>
               </div>
               <TablePagination
                 page={usersPage.page}
@@ -1202,6 +1203,7 @@ export function AuditLogs() {
             </div>
           </div>
           <div className="mt-4 overflow-x-auto">
+            <ListBody>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1269,6 +1271,7 @@ export function AuditLogs() {
                 )}
               </TableBody>
             </Table>
+            </ListBody>
           </div>
           <TablePagination
             page={auditPage.page}
@@ -1285,11 +1288,81 @@ export function AuditLogs() {
   );
 }
 
+function SettingsCard({
+  icon,
+  title,
+  subtitle,
+  action,
+  className,
+  children,
+  footer,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  action?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+  footer?: { label: string; onClick?: () => void };
+}) {
+  return (
+    <Card className={cn("flex h-full flex-col rounded-xl border-border/70 shadow-sm", className)}>
+      <CardContent className="flex flex-1 flex-col p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+              {icon}
+            </span>
+            <div>
+              <h2 className="font-display text-xl font-semibold">{title}</h2>
+              <p className="text-xs text-muted-foreground">{subtitle}</p>
+            </div>
+          </div>
+          {action}
+        </div>
+        <div className="mt-4 flex-1">{children}</div>
+        {footer && (
+          <button
+            type="button"
+            onClick={footer.onClick}
+            className="mt-4 flex items-center gap-1.5 self-start border-t border-border/60 pt-4 text-sm font-medium text-primary transition hover:gap-2.5"
+          >
+            {footer.label}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "success" | "default";
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      {tone === "success" ? (
+        <Badge variant="outline" className="border-success/30 bg-success/15 text-success">
+          {value}
+        </Badge>
+      ) : (
+        <span className="text-sm font-medium">{value}</span>
+      )}
+    </div>
+  );
+}
+
 export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employee" }) {
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(true);
   const [backupSchedule, setBackupSchedule] = useState("daily");
   const [backups, setBackups] = useState(backupSeed);
-  const backupsPage = usePagination(backups);
   const [backupInProgress, setBackupInProgress] = useState(false);
   const [backupProgress, setBackupProgress] = useState(0);
   const [restoreTarget, setRestoreTarget] = useState<(typeof backupSeed)[number] | null>(null);
@@ -1298,29 +1371,47 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
     "Browser notifications": true,
     "System announcements": true,
   });
-  const [prefs, setPrefs] = useState({
-    theme: "light",
-    language: "en",
-    dateFormat: "mdy",
-    timeFormat: "12h",
-    timeZone: "ph",
-  });
-  const [company, setCompany] = useState({
-    name: "Oxford Suites Makati",
-    email: "info@oxfordsuites.com.ph",
-    contact: "(02) 8888-0000",
-    address: "Ayala Center, Makati City",
-    hours: "24/7 Front Desk Operations",
-  });
-  const setPref = (key: keyof typeof prefs) => (v: string) => setPrefs((p) => ({ ...p, [key]: v }));
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [twoFactor, setTwoFactor] = useState(true);
-  const [passwordPolicy, setPasswordPolicy] = useState("strong");
-  const [sessionTimeout, setSessionTimeout] = useState("30");
-  const [maxAttempts, setMaxAttempts] = useState("3");
+
+  // Notifications dialog
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifDraft, setNotifDraft] = useState(notify);
+
+  // Preferences
+  const [preferences, setPreferences] = useState({
+    theme: "Light",
+    language: "English",
+    dateFormat: "MM/DD/YYYY",
+    timeFormat: "12-hour",
+    timeZone: "Asia/Manila (GMT+8)",
+  });
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const [prefsDraft, setPrefsDraft] = useState(preferences);
+
+  // Login security
+  const [security, setSecurity] = useState({
+    twoFactor: true,
+    passwordPolicy: "Strong",
+    sessionTimeout: "30 minutes",
+    maxLoginAttempts: "3 attempts",
+  });
+  const [securityOpen, setSecurityOpen] = useState(false);
+  const [securityDraft, setSecurityDraft] = useState(security);
+
+  // Company info
+  const [company, setCompany] = useState({
+    name: "Oxford Suites Makati",
+    email: "info@oxfordsuites.com.ph",
+    contact: "(02) 8888-0000",
+    businessHours: "24/7 Front Desk Operations",
+    address: "Ayala Center, Makati City",
+    tin: "000-000-000-000",
+  });
+  const [companyOpen, setCompanyOpen] = useState(false);
+  const [companyDraft, setCompanyDraft] = useState(company);
 
   const createBackup = () => {
     if (backupInProgress) return;
@@ -1366,9 +1457,7 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
     setConfirmPassword("");
   };
 
-  const showCompany = role === "superadmin" || role === "admin";
-  const showBackup = role === "superadmin";
-  const showSystemSecurity = role === "superadmin";
+  const isSuperAdmin = role === "superadmin";
 
   return (
     <div>
@@ -1378,391 +1467,467 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
         description="Notifications, preferences and system data management."
       />
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {/* Notifications */}
-        <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
-          <CardContent className="flex flex-1 flex-col space-y-4 p-6">
-            <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                <Bell className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="font-display text-xl font-semibold">Notifications</h2>
-                <p className="text-xs text-muted-foreground">
-                  Choose how this account receives HRMS alerts.
-                </p>
+        <SettingsCard
+          icon={<Bell className="h-5 w-5" />}
+          title="Notifications"
+          subtitle="Choose how you receive alerts and updates"
+          footer={{
+            label: "Manage notifications",
+            onClick: () => {
+              setNotifDraft(notify);
+              setNotifOpen(true);
+            },
+          }}
+        >
+          <div className="divide-y divide-border/60">
+            {(
+              ["Email notifications", "Browser notifications", "System announcements"] as const
+            ).map((label) => (
+              <div key={label} className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+                <span className="text-sm text-muted-foreground">{label}</span>
+                <Switch
+                  aria-label={label}
+                  checked={notify[label] ?? false}
+                  onCheckedChange={(v) => {
+                    setNotify((prev) => ({ ...prev, [label]: v }));
+                    toast.success(`${label} ${v ? "enabled" : "disabled"}`);
+                  }}
+                />
               </div>
-            </div>
-            <div className="space-y-3">
+            ))}
+          </div>
+        </SettingsCard>
+
+        <Dialog open={notifOpen} onOpenChange={setNotifOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="font-display text-2xl">Manage notifications</DialogTitle>
+            </DialogHeader>
+            <div className="divide-y divide-border/60">
               {(
                 ["Email notifications", "Browser notifications", "System announcements"] as const
               ).map((label) => (
-                <div
-                  key={label}
-                  className="flex items-center justify-between gap-4 rounded-lg border border-border/70 bg-muted/30 p-4"
-                >
-                  <div className="min-w-0">
-                    <span className="text-sm font-medium">{label}</span>
-                    <p className="text-xs text-muted-foreground">
-                      {label === "Email notifications"
-                        ? "Digest and request updates sent to your inbox."
-                        : label === "Browser notifications"
-                          ? "Real-time pop-ups while you are signed in."
-                          : "Company-wide announcements from HR."}
-                    </p>
-                  </div>
+                <div key={label} className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+                  <span className="text-sm text-muted-foreground">{label}</span>
                   <Switch
                     aria-label={label}
-                    checked={notify[label] ?? false}
-                    onCheckedChange={(v) => {
-                      setNotify((prev) => ({ ...prev, [label]: v }));
-                      toast.success(`${label} ${v ? "enabled" : "disabled"}`);
-                    }}
+                    checked={notifDraft[label] ?? false}
+                    onCheckedChange={(v) => setNotifDraft((prev) => ({ ...prev, [label]: v }))}
                   />
                 </div>
               ))}
             </div>
-            <div className="mt-auto flex justify-end pt-1">
-              <Button onClick={() => toast.success("Notification settings saved")}>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setNotifOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  setNotify(notifDraft);
+                  setNotifOpen(false);
+                  toast.success("Notification settings saved");
+                }}
+              >
                 Save changes
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Preferences */}
-        <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
-          <CardContent className="flex flex-1 flex-col space-y-5 p-6">
-            <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                <SlidersHorizontal className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="font-display text-xl font-semibold">Preferences</h2>
-                <p className="text-xs text-muted-foreground">
-                  Personalize how the portal looks and formats data.
-                </p>
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+        <SettingsCard
+          icon={<SlidersHorizontal className="h-5 w-5" />}
+          title="Preferences"
+          subtitle="Personalize how the portal looks and formats data"
+          footer={{
+            label: "Edit preferences",
+            onClick: () => {
+              setPrefsDraft(preferences);
+              setPrefsOpen(true);
+            },
+          }}
+        >
+          <div className="divide-y divide-border/60">
+            <InfoRow label="Theme" value={preferences.theme} />
+            <InfoRow label="Language" value={preferences.language} />
+            <InfoRow label="Date format" value={preferences.dateFormat} />
+            <InfoRow label="Time format" value={preferences.timeFormat} />
+            <InfoRow label="Time zone" value={preferences.timeZone} />
+          </div>
+        </SettingsCard>
+
+        <Dialog open={prefsOpen} onOpenChange={setPrefsOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="font-display text-2xl">Edit preferences</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4">
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Palette className="h-3.5 w-3.5 text-muted-foreground" /> Theme
-                </Label>
-                <Select value={prefs.theme} onValueChange={setPref("theme")}>
+                <Label>Theme</Label>
+                <Select value={prefsDraft.theme} onValueChange={(v) => setPrefsDraft((p) => ({ ...p, theme: v }))}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="light">Light</SelectItem>
-                    <SelectItem value="dark">Dark</SelectItem>
-                    <SelectItem value="system">System</SelectItem>
+                    <SelectItem value="Light">Light</SelectItem>
+                    <SelectItem value="Dark">Dark</SelectItem>
+                    <SelectItem value="System">System</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Globe className="h-3.5 w-3.5 text-muted-foreground" /> Language
-                </Label>
-                <Select value={prefs.language} onValueChange={setPref("language")}>
+                <Label>Language</Label>
+                <Select
+                  value={prefsDraft.language}
+                  onValueChange={(v) => setPrefsDraft((p) => ({ ...p, language: v }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="en">English</SelectItem>
-                    <SelectItem value="fil">Filipino</SelectItem>
+                    <SelectItem value="English">English</SelectItem>
+                    <SelectItem value="Filipino">Filipino</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Date format</Label>
-                <Select value={prefs.dateFormat} onValueChange={setPref("dateFormat")}>
+                <Select
+                  value={prefsDraft.dateFormat}
+                  onValueChange={(v) => setPrefsDraft((p) => ({ ...p, dateFormat: v }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="mdy">MM/DD/YYYY</SelectItem>
-                    <SelectItem value="dmy">DD/MM/YYYY</SelectItem>
-                    <SelectItem value="ymd">YYYY-MM-DD</SelectItem>
+                    <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
+                    <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
+                    <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Clock className="h-3.5 w-3.5 text-muted-foreground" /> Time format
-                </Label>
-                <Select value={prefs.timeFormat} onValueChange={setPref("timeFormat")}>
+                <Label>Time format</Label>
+                <Select
+                  value={prefsDraft.timeFormat}
+                  onValueChange={(v) => setPrefsDraft((p) => ({ ...p, timeFormat: v }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="12h">12-hour</SelectItem>
-                    <SelectItem value="24h">24-hour</SelectItem>
+                    <SelectItem value="12-hour">12-hour</SelectItem>
+                    <SelectItem value="24-hour">24-hour</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2 sm:col-span-2">
+              <div className="space-y-2">
                 <Label>Time zone</Label>
-                <Select value={prefs.timeZone} onValueChange={setPref("timeZone")}>
+                <Select
+                  value={prefsDraft.timeZone}
+                  onValueChange={(v) => setPrefsDraft((p) => ({ ...p, timeZone: v }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ph">Asia/Manila (GMT+8)</SelectItem>
-                    <SelectItem value="utc">UTC</SelectItem>
+                    <SelectItem value="Asia/Manila (GMT+8)">Asia/Manila (GMT+8)</SelectItem>
+                    <SelectItem value="UTC">UTC</SelectItem>
+                    <SelectItem value="America/Los_Angeles (GMT-8)">America/Los_Angeles (GMT-8)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div className="mt-auto flex justify-end gap-2 border-t border-border/60 pt-4">
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPrefsOpen(false)}>
+                Cancel
+              </Button>
               <Button
-                variant="outline"
                 onClick={() => {
-                  setPrefs({
-                    theme: "light",
-                    language: "en",
-                    dateFormat: "mdy",
-                    timeFormat: "12h",
-                    timeZone: "ph",
-                  });
-                  toast.success("Preferences reset to defaults");
+                  setPreferences(prefsDraft);
+                  setPrefsOpen(false);
+                  toast.success("Preferences saved");
                 }}
               >
-                <RotateCcw className="mr-2 h-4 w-4" /> Reset
+                Save changes
               </Button>
-              <Button onClick={() => toast.success("Preferences saved")}>Save preferences</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Login Security (superadmin) or Change Password (admin/employee) */}
+        {isSuperAdmin ? (
+          <SettingsCard
+            icon={<Shield className="h-5 w-5" />}
+            title="Login Security"
+            subtitle="System-wide login security policy for all portals"
+            footer={{
+              label: "Manage security",
+              onClick: () => {
+                setSecurityDraft(security);
+                setSecurityOpen(true);
+              },
+            }}
+          >
+            <div className="divide-y divide-border/60">
+              <InfoRow
+                label="Two-factor authentication"
+                value={security.twoFactor ? "Enabled" : "Disabled"}
+                tone={security.twoFactor ? "success" : "default"}
+              />
+              <InfoRow label="Default password policy" value={security.passwordPolicy} />
+              <InfoRow label="Session timeout" value={security.sessionTimeout} />
+              <InfoRow label="Max login attempts" value={security.maxLoginAttempts} />
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Security */}
-        <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
-          <CardContent className="flex flex-1 flex-col space-y-5 p-6">
-            <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                <Shield className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="font-display text-xl font-semibold">
-                  {showSystemSecurity ? "Login Security" : "Account Security"}
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  {showSystemSecurity
-                    ? "System-wide login security policy for all portals."
-                    : "Update your account password."}
-                </p>
-              </div>
-            </div>
-
-            {!showSystemSecurity && (
-              <div className="space-y-3">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="cur-pw">Current password</Label>
-                    <Input
-                      id="cur-pw"
-                      type="password"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      placeholder="••••••••"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="new-pw">New password</Label>
-                    <Input
-                      id="new-pw"
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="••••••••"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="confirm-pw">Confirm new password</Label>
-                    <Input
-                      id="confirm-pw"
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="••••••••"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <Button onClick={changeOwnPassword}>
-                    <KeyRound className="mr-2 h-4 w-4" /> Update password
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {showSystemSecurity && (
-              <div className="space-y-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  System-wide login policy
-                </p>
-                <div className="flex items-center justify-between gap-4 rounded-lg border border-border/70 bg-muted/30 p-4">
-                  <div>
-                    <p className="text-sm font-medium">Two-factor authentication</p>
-                    <p className="text-xs text-muted-foreground">
-                      Require an OTP code for all admin logins.
-                    </p>
-                  </div>
-                  <Switch checked={twoFactor} onCheckedChange={setTwoFactor} />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Default password policy</Label>
-                    <Select value={passwordPolicy} onValueChange={setPasswordPolicy}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="basic">Basic (min 6 characters)</SelectItem>
-                        <SelectItem value="strong">
-                          Strong (upper, lower, number, symbol)
-                        </SelectItem>
-                        <SelectItem value="strict">Strict (12+ chars, no reuse)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Session timeout (minutes)</Label>
-                    <Select value={sessionTimeout} onValueChange={setSessionTimeout}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["15", "30", "60", "120"].map((v) => (
-                          <SelectItem key={v} value={v}>
-                            {v} minutes
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label>Max failed login attempts / lockout</Label>
-                    <Select value={maxAttempts} onValueChange={setMaxAttempts}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["3", "5", "10"].map((v) => (
-                          <SelectItem key={v} value={v}>
-                            {v} attempts
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    variant="outline"
-                    onClick={() => toast.success("System-wide login security policy saved")}
-                  >
-                    Save login policy
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Company */}
-        {showCompany && (
-          <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
-            <CardContent className="flex flex-1 flex-col space-y-5 p-6">
+          </SettingsCard>
+        ) : (
+          <Card id="change-password" className="flex h-full flex-col scroll-mt-20 rounded-xl border-border/70 shadow-sm">
+            <CardContent className="flex flex-1 flex-col space-y-4 p-6">
               <div className="flex items-center gap-3">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                  <Building2 className="h-5 w-5" />
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+                  <KeyRound className="h-5 w-5" />
                 </span>
                 <div>
-                  <h2 className="font-display text-xl font-semibold">Company</h2>
-                  <p className="text-xs text-muted-foreground">
-                    {role === "superadmin"
-                      ? "Details used across documents, job posts and portals."
-                      : "Read-only organization details managed by Super Admin."}
-                  </p>
+                  <h2 className="font-display text-xl font-semibold">Change Password</h2>
+                  <p className="text-xs text-muted-foreground">Update your account password.</p>
                 </div>
               </div>
-              <div className="grid flex-1 content-start gap-4 sm:grid-cols-2">
+              <div className="grid gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="cur-pw">Current password</Label>
+                  <Input
+                    id="cur-pw"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="••••••••"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new-pw">New password</Label>
+                  <Input
+                    id="new-pw"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="••••••••"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-pw">Confirm new password</Label>
+                  <Input
+                    id="confirm-pw"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                  />
+                </div>
+              </div>
+              <div className="mt-auto flex justify-end pt-1">
+                <Button onClick={changeOwnPassword}>
+                  <KeyRound className="mr-2 h-4 w-4" /> Update password
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isSuperAdmin && (
+          <Dialog open={securityOpen} onOpenChange={setSecurityOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="font-display text-2xl">Manage security</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4">
+                <div className="flex items-center justify-between gap-4">
+                  <Label>Two-factor authentication</Label>
+                  <Switch
+                    checked={securityDraft.twoFactor}
+                    onCheckedChange={(v) => setSecurityDraft((p) => ({ ...p, twoFactor: v }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Default password policy</Label>
+                  <Select
+                    value={securityDraft.passwordPolicy}
+                    onValueChange={(v) => setSecurityDraft((p) => ({ ...p, passwordPolicy: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Basic">Basic</SelectItem>
+                      <SelectItem value="Strong">Strong</SelectItem>
+                      <SelectItem value="Very strong">Very strong</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Session timeout</Label>
+                  <Select
+                    value={securityDraft.sessionTimeout}
+                    onValueChange={(v) => setSecurityDraft((p) => ({ ...p, sessionTimeout: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="15 minutes">15 minutes</SelectItem>
+                      <SelectItem value="30 minutes">30 minutes</SelectItem>
+                      <SelectItem value="60 minutes">60 minutes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Max login attempts</Label>
+                  <Select
+                    value={securityDraft.maxLoginAttempts}
+                    onValueChange={(v) => setSecurityDraft((p) => ({ ...p, maxLoginAttempts: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="3 attempts">3 attempts</SelectItem>
+                      <SelectItem value="5 attempts">5 attempts</SelectItem>
+                      <SelectItem value="10 attempts">10 attempts</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setSecurityOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    setSecurity(securityDraft);
+                    setSecurityOpen(false);
+                    toast.success("System-wide login security policy saved");
+                  }}
+                >
+                  Save changes
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Company (superadmin only) */}
+        {isSuperAdmin && (
+          <SettingsCard
+            icon={<Building2 className="h-5 w-5" />}
+            title="Company"
+            subtitle="Default used in documents, job post and portals"
+            footer={{
+              label: "Edit company info",
+              onClick: () => {
+                setCompanyDraft(company);
+                setCompanyOpen(true);
+              },
+            }}
+          >
+            <div className="divide-y divide-border/60">
+              <InfoRow label="Company name" value={company.name} />
+              <InfoRow label="Company email" value={company.email} />
+              <InfoRow label="Contact number" value={company.contact} />
+              <InfoRow label="Business hours" value={company.businessHours} />
+              <InfoRow label="Company address" value={company.address} />
+              <InfoRow label="TIN" value={company.tin} />
+            </div>
+          </SettingsCard>
+        )}
+
+        {isSuperAdmin && (
+          <Dialog open={companyOpen} onOpenChange={setCompanyOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="font-display text-2xl">Edit company info</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="co-name">Company name</Label>
                   <Input
                     id="co-name"
-                    value={company.name}
-                    disabled={role !== "superadmin"}
-                    onChange={(e) => setCompany((c) => ({ ...c, name: e.target.value }))}
+                    value={companyDraft.name}
+                    onChange={(e) => setCompanyDraft((p) => ({ ...p, name: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="co-email">Company email</Label>
                   <Input
                     id="co-email"
-                    type="email"
-                    value={company.email}
-                    disabled={role !== "superadmin"}
-                    onChange={(e) => setCompany((c) => ({ ...c, email: e.target.value }))}
+                    value={companyDraft.email}
+                    onChange={(e) => setCompanyDraft((p) => ({ ...p, email: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="co-contact">Contact number</Label>
                   <Input
                     id="co-contact"
-                    value={company.contact}
-                    disabled={role !== "superadmin"}
-                    onChange={(e) => setCompany((c) => ({ ...c, contact: e.target.value }))}
+                    value={companyDraft.contact}
+                    onChange={(e) => setCompanyDraft((p) => ({ ...p, contact: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="co-hours">Business hours</Label>
                   <Input
                     id="co-hours"
-                    value={company.hours}
-                    disabled={role !== "superadmin"}
-                    onChange={(e) => setCompany((c) => ({ ...c, hours: e.target.value }))}
+                    value={companyDraft.businessHours}
+                    onChange={(e) => setCompanyDraft((p) => ({ ...p, businessHours: e.target.value }))}
                   />
                 </div>
-                <div className="space-y-2 sm:col-span-2">
+                <div className="space-y-2">
                   <Label htmlFor="co-address">Company address</Label>
                   <Input
                     id="co-address"
-                    value={company.address}
-                    disabled={role !== "superadmin"}
-                    onChange={(e) => setCompany((c) => ({ ...c, address: e.target.value }))}
+                    value={companyDraft.address}
+                    onChange={(e) => setCompanyDraft((p) => ({ ...p, address: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="co-tin">TIN</Label>
+                  <Input
+                    id="co-tin"
+                    value={companyDraft.tin}
+                    onChange={(e) => setCompanyDraft((p) => ({ ...p, tin: e.target.value }))}
                   />
                 </div>
               </div>
-              {role === "superadmin" ? (
-                <div className="mt-auto flex justify-end border-t border-border/60 pt-4">
-                  <Button onClick={() => toast.success("Company information saved")}>
-                    Save company info
-                  </Button>
-                </div>
-              ) : (
-                <p className="mt-auto border-t border-border/60 pt-4 text-xs text-muted-foreground">
-                  Contact a Super Admin to update company-wide information.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setCompanyOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    setCompany(companyDraft);
+                    setCompanyOpen(false);
+                    toast.success("Company information saved");
+                  }}
+                >
+                  Save changes
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         )}
 
-        {/* Backup & Restore */}
-        {showBackup && (
-          <Card className="rounded-xl border-border/70 shadow-sm lg:col-span-2">
+        {/* Backup & Restore (superadmin only) */}
+        {isSuperAdmin && (
+          <Card className="rounded-xl border-border/70 shadow-sm xl:col-span-2">
             <CardContent className="flex flex-1 flex-col space-y-4 p-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
                     <Database className="h-5 w-5" />
                   </span>
                   <div>
                     <h2 className="font-display text-xl font-semibold">Backup &amp; Restore</h2>
                     <p className="text-xs text-muted-foreground">
-                      Manage system backups and restore points.
+                      Manage system backups and restore points
                     </p>
                   </div>
                 </div>
@@ -1780,11 +1945,11 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border/70 bg-muted/30 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-caution/30 bg-caution/10 p-4">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">Automatic backups</p>
                   <p className="text-xs text-muted-foreground">
-                    Run scheduled backups without manual action.
+                    Run scheduled backups without manual action
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -1808,11 +1973,11 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                 </div>
               </div>
 
-              <div className="max-h-[18rem] overflow-auto rounded-lg border border-border/70">
+              <div className="max-h-80 overflow-y-auto rounded-lg border border-border/70">
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="sticky top-0 z-10 bg-card">
                     <TableRow>
-                      <TableHead>Backup</TableHead>
+                      <TableHead>Backup id</TableHead>
                       <TableHead>Timestamp</TableHead>
                       <TableHead>Size</TableHead>
                       <TableHead>Type</TableHead>
@@ -1820,7 +1985,7 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {backupsPage.pageItems.map((b) => (
+                    {backups.map((b) => (
                       <TableRow key={b.id}>
                         <TableCell className="text-sm font-medium">{b.id}</TableCell>
                         <TableCell className="text-xs">{b.timestamp}</TableCell>
@@ -1872,15 +2037,9 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                   </TableBody>
                 </Table>
               </div>
-              <TablePagination
-                page={backupsPage.page}
-                pageCount={backupsPage.pageCount}
-                from={backupsPage.from}
-                to={backupsPage.to}
-                total={backupsPage.total}
-                label="backups"
-                onPageChange={backupsPage.setPage}
-              />
+              <p className="text-xs text-muted-foreground">
+                Showing {backups.length > 0 ? 1 : 0}-{backups.length} of {backups.length} backups
+              </p>
             </CardContent>
           </Card>
         )}

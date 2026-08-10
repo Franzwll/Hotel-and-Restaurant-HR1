@@ -2,6 +2,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/portal/PageHeader";
+import { ListBody } from "@/components/portal/ListBody";
+import { ListEmptyState } from "@/components/portal/ListEmptyState";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { usePagination } from "@/hooks/usePagination";
 import { StatCard } from "@/components/portal/StatCard";
@@ -45,15 +47,20 @@ import {
   myPayroll,
   myProfile,
   mySchedule,
-  requestCategories,
+  useEssCategories,
 } from "@/data/ess";
 
 const peso = (n: number) => `₱${n.toLocaleString("en-PH")}`;
 
 export function EmployeeEss() {
-  const [category, setCategory] = useState(requestCategories[0]!.name);
+  const allCategories = useEssCategories();
+  // Categories closed by HR no longer accept new requests.
+  const requestCategories = allCategories.filter((c) => c.open !== false);
+  const [category, setCategory] = useState(allCategories[0]!.name);
   const mine = essRequests.filter((r) => r.employeeId === myProfile.employeeId);
-  const types = requestCategories.find((c) => c.name === category)?.types ?? [];
+  const activeCategory =
+    requestCategories.find((c) => c.name === category) ?? requestCategories[0];
+  const types = activeCategory?.types ?? [];
 
   const attendancePage = usePagination(myAttendance.history);
   const payslipPage = usePagination(myPayroll.payslips);
@@ -115,6 +122,7 @@ export function EmployeeEss() {
             <Card className="border-border/70">
               <CardContent className="p-6">
                 <h2 className="font-display text-2xl font-semibold">Attendance History</h2>
+                <ListBody>
                 <Table className="mt-4">
                   <TableHeader>
                     <TableRow>
@@ -135,8 +143,16 @@ export function EmployeeEss() {
                         <TableCell className="text-xs">{h.remark}</TableCell>
                       </TableRow>
                     ))}
+                    {attendancePage.pageItems.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-8">
+                          <ListEmptyState subject="attendance records" />
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
+                </ListBody>
                 <TablePagination
                   page={attendancePage.page}
                   pageCount={attendancePage.pageCount}
@@ -232,6 +248,7 @@ export function EmployeeEss() {
             <Card className="border-border/70">
               <CardContent className="p-6">
                 <h2 className="font-display text-2xl font-semibold">Payslip History</h2>
+                <ListBody>
                 <Table className="mt-4">
                   <TableHeader>
                     <TableRow>
@@ -260,8 +277,16 @@ export function EmployeeEss() {
                         </TableCell>
                       </TableRow>
                     ))}
+                    {payslipPage.pageItems.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="py-8">
+                          <ListEmptyState subject="payslips" />
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
+                </ListBody>
                 <TablePagination
                   page={payslipPage.page}
                   pageCount={payslipPage.pageCount}
@@ -309,7 +334,7 @@ export function EmployeeEss() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Category</Label>
-                  <Select value={category} onValueChange={setCategory}>
+                  <Select value={activeCategory?.name ?? ""} onValueChange={setCategory}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -348,7 +373,10 @@ export function EmployeeEss() {
               </div>
               <div className="space-y-2">
                 <Label>Reason / details</Label>
-                <Textarea rows={4} placeholder="Provide details for HR…" />
+                <Textarea
+                  rows={4}
+                  placeholder={activeCategory?.description || "Provide details for HR…"}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Supporting document</Label>
@@ -365,6 +393,7 @@ export function EmployeeEss() {
           <Card className="border-border/70">
             <CardContent className="p-6">
               <h2 className="font-display text-2xl font-semibold">My Requests</h2>
+              <ListBody>
               <Table className="mt-4">
                 <TableHeader>
                   <TableRow>
@@ -387,8 +416,16 @@ export function EmployeeEss() {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {minePage.pageItems.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-8">
+                        <ListEmptyState subject="requests" />
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
+              </ListBody>
                 <TablePagination
                   page={minePage.page}
                   pageCount={minePage.pageCount}
