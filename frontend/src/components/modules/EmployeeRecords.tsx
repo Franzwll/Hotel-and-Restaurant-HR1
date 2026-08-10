@@ -330,6 +330,12 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
   });
   const [profileTab, setProfileTab] = useState("personal");
   const [historyFormOpen, setHistoryFormOpen] = useState(false);
+  const [editingHistoryId, setEditingHistoryId] = useState<string | null>(null);
+  const [editHistory, setEditHistory] = useState<{
+    type: HistoryEntry["type"];
+    date: string;
+    detail: string;
+  }>({ type: "Promotion", date: "", detail: "" });
   const [logAction, setLogAction] = useState("all");
   const [bulkPickOpen, setBulkPickOpen] = useState(false);
   const [bulkTypes, setBulkTypes] = useState<string[]>([documentTypes[0]!]);
@@ -430,6 +436,28 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
     }));
     toast.success("History record deleted");
   };
+
+  const startEditHistory = (h: HistoryEntry) => {
+    setEditingHistoryId(h.id);
+    setEditHistory({ type: h.type, date: h.date, detail: h.detail });
+  };
+
+  const saveEditHistory = () => {
+    if (!profile || !editingHistoryId) return;
+    if (!editHistory.detail.trim()) {
+      toast.error("Enter the history details");
+      return;
+    }
+    setHistory((h) => ({
+      ...h,
+      [profile.id]: historyFor(profile).map((x) =>
+        x.id === editingHistoryId ? { ...x, ...editHistory } : x,
+      ),
+    }));
+    setEditingHistoryId(null);
+    toast.success("History record updated");
+  };
+
 
   const createEmployee = () => {
     if (!form.name.trim() || !form.position.trim()) {
@@ -1114,7 +1142,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
 
       {/* 201 FILE */}
       <Dialog open={!!profile} onOpenChange={(o) => !o && setProfileId(null)}>
-        <DialogContent className="flex h-[88vh] flex-col gap-4 overflow-y-auto sm:max-w-6xl">
+        <DialogContent className="flex h-[96vh] flex-col gap-3 overflow-hidden sm:max-w-6xl">
           {profile &&
             (() => {
               const p = { ...buildProfile(profile), ...(personalOverrides[profile.id] ?? {}) };
@@ -1136,7 +1164,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                     </p>
                   )}
 
-                  <Tabs value={profileTab} onValueChange={setProfileTab}>
+                  <Tabs value={profileTab} onValueChange={setProfileTab} className="flex min-h-0 flex-1 flex-col">
                     <TabsList className="flex h-auto flex-wrap justify-start">
                       <TabsTrigger value="personal">Personal Information</TabsTrigger>
                       <TabsTrigger value="documents">Documents</TabsTrigger>
@@ -1194,7 +1222,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                       </div>
                     )}
 
-                    <TabsContent value="personal" className="mt-3 h-[46vh] space-y-3 overflow-y-auto pr-1">
+                    <TabsContent value="personal" className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
                       <Section title="Personal details">
                         <EF
                           label="Full name"
@@ -1350,7 +1378,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                       )}
                     </TabsContent>
 
-                    <TabsContent value="documents" className="mt-3 h-[46vh] space-y-3 overflow-y-auto pr-1">
+                    <TabsContent value="documents" className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
                       <div className="space-y-1.5">
                         {docsFor(profile).map((doc, i) => (
                           <div
@@ -1406,7 +1434,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="history" className="mt-3 h-[46vh] space-y-3 overflow-y-auto pr-1">
+                    <TabsContent value="history" className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
                       {isSuper && historyFormOpen && (
                         <div className="rounded-md border border-border p-3">
                           <p className="eyebrow mb-2">New history entry</p>
@@ -1462,30 +1490,95 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                           .map((h) => (
                             <div
                               key={h.id}
-                              className="flex items-center justify-between rounded-md border border-border p-2.5"
+                              className="rounded-md border border-border p-2.5"
                             >
-                              <div className="flex items-start gap-3">
-                                <Badge
-                                  variant="secondary"
-                                  className="mt-0.5 shrink-0 text-[0.65rem]"
-                                >
-                                  {h.type}
-                                </Badge>
-                                <div>
-                                  <p className="text-sm">{h.detail}</p>
-                                  <p className="text-xs text-muted-foreground">{h.date}</p>
+                              {editingHistoryId === h.id ? (
+                                <div className="space-y-2">
+                                  <div className="grid gap-2 sm:grid-cols-3">
+                                    <Select
+                                      value={editHistory.type}
+                                      onValueChange={(v) =>
+                                        setEditHistory({
+                                          ...editHistory,
+                                          type: v as HistoryEntry["type"],
+                                        })
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {["Promotion", "Transfer", "Employment"].map((t) => (
+                                          <SelectItem key={t} value={t}>
+                                            {t}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <Input
+                                      type="date"
+                                      value={editHistory.date}
+                                      onChange={(e) =>
+                                        setEditHistory({ ...editHistory, date: e.target.value })
+                                      }
+                                    />
+                                    <Input
+                                      value={editHistory.detail}
+                                      onChange={(e) =>
+                                        setEditHistory({ ...editHistory, detail: e.target.value })
+                                      }
+                                    />
+                                  </div>
+                                  <div className="flex justify-end gap-2">
+                                    <Button size="sm" onClick={saveEditHistory}>
+                                      Save
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setEditingHistoryId(null)}
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
                                 </div>
-                              </div>
-                              {isSuper && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-7 w-7 shrink-0"
-                                  onClick={() => deleteHistory(h.id)}
-                                  aria-label="Delete history entry"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
+                              ) : (
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-start gap-3">
+                                    <Badge
+                                      variant="secondary"
+                                      className="mt-0.5 shrink-0 text-[0.65rem]"
+                                    >
+                                      {h.type}
+                                    </Badge>
+                                    <div>
+                                      <p className="text-sm">{h.detail}</p>
+                                      <p className="text-xs text-muted-foreground">{h.date}</p>
+                                    </div>
+                                  </div>
+                                  {isSuper && (
+                                    <div className="flex shrink-0 gap-1">
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7"
+                                        onClick={() => startEditHistory(h)}
+                                        aria-label="Edit history entry"
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7"
+                                        onClick={() => deleteHistory(h.id)}
+                                        aria-label="Delete history entry"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           ))}
@@ -1493,7 +1586,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                     </TabsContent>
                   </Tabs>
 
-                  <DialogFooter>
+                  <DialogFooter className="mt-auto shrink-0 border-t border-border/60 pt-3">
                     <Button variant="outline" onClick={printRecord}>
                       <Printer className="mr-2 h-3.5 w-3.5" /> Print record
                     </Button>
@@ -1778,9 +1871,9 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border p-3">
-      <p className="eyebrow mb-2">{title}</p>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
+    <div className="rounded-md border border-border px-3 py-1.5">
+      <p className="eyebrow mb-1">{title}</p>
+      <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
     </div>
   );
 }
@@ -1788,8 +1881,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ k, v, wide }: { k: string; v: string; wide?: boolean }) {
   return (
     <div className={wide ? "sm:col-span-2" : undefined}>
-      <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">{k}</p>
-      <p className="text-sm">{v}</p>
+      <p className="text-[0.62rem] uppercase leading-tight tracking-wide text-muted-foreground">
+        {k}
+      </p>
+      <p className="text-[0.8rem] leading-snug">{v}</p>
     </div>
   );
 }
