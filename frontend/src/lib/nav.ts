@@ -48,6 +48,9 @@ const essChildren = (base: string) => [
   { label: "Payroll", to: `${base}/ess?category=Payroll` },
   { label: "Performance", to: `${base}/ess?category=Performance` },
   { label: "Company Documents", to: `${base}/ess?category=Documents` },
+const hcmChildren = (base: string) => [
+  { label: "Organizational Chart", to: `${base}/org-chart` },
+  { label: "Department & Position", to: `${base}/dept-pos` },
 ];
 
 export function navForRole(role: Role): NavItem[] {
@@ -70,7 +73,12 @@ export function navForRole(role: Role): NavItem[] {
       icon: Megaphone,
       children: recruitmentChildren(base),
     },
-    { label: "Core HCM", to: `${base}/hcm`, icon: Building2 },
+    {
+      label: "Core HCM",
+      to: `${base}/org-chart`,
+      icon: Building2,
+      children: hcmChildren(base),
+    },
     { label: "Employee Records", to: `${base}/employees`, icon: FolderOpen },
     { label: "ESS Management", to: `${base}/ess`, icon: Headset, children: essChildren(base) },
   ];

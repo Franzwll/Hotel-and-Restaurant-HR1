@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+
 export type ESSRequest = {
   id: string;
   employee: string;
@@ -98,17 +100,90 @@ export const essRequests: ESSRequest[] = [
   },
 ];
 
-export const requestCategories = [
-  { name: "Leave", types: ["Vacation", "Sick", "Emergency", "Maternity", "Paternity", "Solo Parent", "Bereavement"] },
-  { name: "Attendance", types: ["Correction", "Missing Time In", "Missing Time Out", "Overtime", "Shift Change", "Rest Day Work"] },
-  { name: "Payroll", types: ["Payslip Request", "Payroll Inquiry", "Discrepancy Report", "Salary Certificate", "BIR 2316"] },
-  { name: "Payroll Update", types: ["Bank Account Update", "Payment Method", "Voluntary Deduction"] },
-  { name: "Loan", types: ["Company Loan", "Salary Loan", "Cash Advance", "Emergency Loan"] },
-  { name: "Reimbursement", types: ["Transportation", "Travel", "Meal Allowance", "Hotel Expense", "Communication"] },
-  { name: "HR Document", types: ["Certificate of Employment", "Service Record", "Employment Verification", "Certificate of Compensation"] },
-  { name: "Personal Info", types: ["Address", "Contact Number", "Email", "Civil Status", "Emergency Contact", "Government ID"] },
-  { name: "Account", types: ["Password Reset", "Unlock Account", "System Access", "Login Problem"] },
+export type RequestCategory = {
+  name: string;
+  /** Optional guidance shown to employees as the details-field placeholder. */
+  description: string;
+  types: string[];
+  custom?: boolean;
+  /** When false the category no longer accepts new employee requests. */
+  open?: boolean;
+};
+
+const seedCategories: RequestCategory[] = [
+  { name: "Leave", description: "Vacation, sick, emergency and other leave filings.", types: ["Vacation", "Sick", "Emergency", "Maternity", "Paternity", "Solo Parent", "Bereavement"] },
+  { name: "Attendance", description: "Time in/out corrections, overtime and shift change requests.", types: ["Correction", "Missing Time In", "Missing Time Out", "Overtime", "Shift Change", "Rest Day Work"] },
+  { name: "Payroll", description: "Payslip copies, payroll inquiries and salary certificates.", types: ["Payslip Request", "Payroll Inquiry", "Discrepancy Report", "Salary Certificate", "BIR 2316"] },
+  { name: "Payroll Update", description: "Bank account, payment method and deduction changes.", types: ["Bank Account Update", "Payment Method", "Voluntary Deduction"] },
+  { name: "Loan", description: "Company loans, salary loans and cash advances.", types: ["Company Loan", "Salary Loan", "Cash Advance", "Emergency Loan"] },
+  { name: "Reimbursement", description: "Transportation, travel and other expense reimbursements.", types: ["Transportation", "Travel", "Meal Allowance", "Hotel Expense", "Communication"] },
+  { name: "HR Document", description: "Certificates and employment verification letters.", types: ["Certificate of Employment", "Service Record", "Employment Verification", "Certificate of Compensation"] },
+  { name: "Personal Info", description: "Updates to your address, contact details or civil status.", types: ["Address", "Contact Number", "Email", "Civil Status", "Emergency Contact", "Government ID"] },
+  { name: "Account", description: "ESS account access and login issues.", types: ["Password Reset", "Unlock Account", "System Access", "Login Problem"] },
 ];
+
+/** Simple module-level store so category edits made in ESS Administration are
+ * reflected immediately on the employee-facing request form. */
+let categoryStore: RequestCategory[] = seedCategories;
+const categoryListeners = new Set<() => void>();
+
+function emitCategories() {
+  categoryListeners.forEach((l) => l());
+}
+
+export function getCategories() {
+  return categoryStore;
+}
+
+export function subscribeCategories(cb: () => void) {
+  categoryListeners.add(cb);
+  return () => categoryListeners.delete(cb);
+}
+
+export function addCategoryEntry(input: { name: string; description: string; types?: string[] }) {
+  categoryStore = [
+    ...categoryStore,
+    {
+      name: input.name,
+      description: input.description,
+      types: input.types ?? [],
+      custom: true,
+      open: true,
+    },
+  ];
+  emitCategories();
+}
+
+export function updateCategoryEntry(
+  originalName: string,
+  input: { name: string; description: string; types?: string[] },
+) {
+  categoryStore = categoryStore.map((c) =>
+    c.name === originalName
+      ? { ...c, name: input.name, description: input.description, types: input.types ?? c.types }
+      : c,
+  );
+  emitCategories();
+}
+
+/** Opens or closes a category for new employee requests. */
+export function setCategoryOpen(name: string, open: boolean) {
+  categoryStore = categoryStore.map((c) => (c.name === name ? { ...c, open } : c));
+  emitCategories();
+}
+
+export function removeCategoryEntry(name: string) {
+  categoryStore = categoryStore.filter((c) => c.name !== name);
+  emitCategories();
+}
+
+
+export function useEssCategories() {
+  return useSyncExternalStore(subscribeCategories, getCategories, getCategories);
+}
+
+/** @deprecated kept for legacy imports — prefer {@link useEssCategories}. */
+export const requestCategories = seedCategories;
 
 export const myProfile = {
   employeeId: "OSM-2026-0142",

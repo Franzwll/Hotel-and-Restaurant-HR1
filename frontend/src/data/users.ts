@@ -352,3 +352,70 @@ export const auditLogs: AuditEntry[] = [
     device: "Edge on Windows",
   },
 ];
+
+export function addAuditLog(entry: Omit<AuditEntry, "id" | "timestamp">) {
+  const newLog: AuditEntry = {
+    id: `LOG-${Math.floor(8992 + Math.random() * 1000)}`,
+    timestamp: new Date().toISOString().replace("T", " ").substring(0, 16),
+    ...entry,
+  };
+  auditLogs.unshift(newLog);
+}
+
+export function createProbationaryUserAccount(emp: {
+  id: string;
+  name: string;
+  email: string;
+  department: string;
+}): SystemUser {
+  const existing = systemUsers.find((u) => u.email.toLowerCase() === emp.email.toLowerCase() || u.name.toLowerCase() === emp.name.toLowerCase());
+  if (existing) {
+    existing.status = "Active";
+    return existing;
+  }
+  const username = emp.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const newUser: SystemUser = {
+    id: `USR-${String(systemUsers.length + 1).padStart(3, "0")}`,
+    name: emp.name,
+    username,
+    email: emp.email,
+    role: "Employee",
+    department: emp.department,
+    status: "Active",
+    lastLogin: "Never",
+    ipAddress: "—",
+  };
+  systemUsers.push(newUser);
+  addAuditLog({
+    user: "HR Admin (System)",
+    role: "Admin",
+    action: `Created user account (${newUser.username}) for Probationary employee ${emp.name}`,
+    module: "User Management",
+    ipAddress: "127.0.0.1",
+    severity: "Info",
+    department: emp.department,
+    device: "System Process",
+  });
+  return newUser;
+}
+
+export function deactivateUserAccount(empEmailOrName: string, reason: string) {
+  const user = systemUsers.find(
+    (u) =>
+      u.email.toLowerCase() === empEmailOrName.toLowerCase() ||
+      u.name.toLowerCase() === empEmailOrName.toLowerCase()
+  );
+  if (user) {
+    user.status = "Disabled";
+    addAuditLog({
+      user: "HR Admin (System)",
+      role: "Admin",
+      action: `Deactivated account for ${user.name} (${reason})`,
+      module: "User Management",
+      ipAddress: "127.0.0.1",
+      severity: "Warning",
+      department: user.department,
+      device: "System Process",
+    });
+  }
+}

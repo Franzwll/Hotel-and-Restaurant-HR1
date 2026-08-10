@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 
 import { PageHeader } from "@/components/portal/PageHeader";
+import { ListBody } from "@/components/portal/ListBody";
+import { ListEmptyState } from "@/components/portal/ListEmptyState";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { usePagination } from "@/hooks/usePagination";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +60,7 @@ import {
   myEmployeeDocuments,
   wireframeActivity,
   requestCategories,
+  useEssCategories,
 } from "@/data/ess";
 
 type RequestItem = {
@@ -73,6 +76,14 @@ type RequestItem = {
 export function EmployeeEss() {
   const [activeTab, setActiveTab] = useState("overview");
   const [category, setCategory] = useState(requestCategories[0]!.name);
+  const allCategories = useEssCategories();
+  // Categories closed by HR no longer accept new requests.
+  const requestCategories = allCategories.filter((c) => c.open !== false);
+  const [category, setCategory] = useState(allCategories[0]!.name);
+  const mine = essRequests.filter((r) => r.employeeId === myProfile.employeeId);
+  const activeCategory =
+    requestCategories.find((c) => c.name === category) ?? requestCategories[0];
+  const types = activeCategory?.types ?? [];
 
   const searchStr = useRouterState({ select: (s) => s.location.searchStr });
 
@@ -1205,6 +1216,10 @@ export function EmployeeEss() {
               </CardHeader>
               <CardContent>
                 <Table>
+              <CardContent className="p-6">
+                <h2 className="font-display text-2xl font-semibold">Attendance History</h2>
+                <ListBody>
+                <Table className="mt-4">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Document</TableHead>
@@ -1220,8 +1235,16 @@ export function EmployeeEss() {
                         <TableCell>{getStatusBadge(r.status)}</TableCell>
                       </TableRow>
                     ))}
+                    {attendancePage.pageItems.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-8">
+                          <ListEmptyState subject="attendance records" />
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
+                </ListBody>
                 <TablePagination
                   page={docPage.page}
                   pageCount={docPage.pageCount}
@@ -1279,6 +1302,102 @@ export function EmployeeEss() {
 
         {/* BENEFITS TAB */}
         <TabsContent value="benefits" className="mt-6">
+        <TabsContent value="payroll" className="mt-4">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="border-border/70">
+              <CardContent className="p-6">
+                <h2 className="font-display text-2xl font-semibold">Payroll Summary</h2>
+                <div className="mt-3 flex gap-6">
+                  <div>
+                    <p className="eyebrow">Gross pay</p>
+                    <p className="font-display text-3xl font-semibold">{peso(myPayroll.gross)}</p>
+                  </div>
+                  <div>
+                    <p className="eyebrow">Net pay</p>
+                    <p className="font-display text-3xl font-semibold text-primary">
+                      {peso(myPayroll.net)}
+                    </p>
+                  </div>
+                </div>
+                <p className="eyebrow mt-4">Earnings</p>
+                {myPayroll.breakdown.map((b) => (
+                  <div
+                    key={b.label}
+                    className="flex justify-between border-b border-border py-1.5 text-sm"
+                  >
+                    <span>{b.label}</span>
+                    <span>{peso(b.amount)}</span>
+                  </div>
+                ))}
+                <p className="eyebrow mt-4">Deductions</p>
+                {myPayroll.deductions.map((b) => (
+                  <div
+                    key={b.label}
+                    className="flex justify-between border-b border-border py-1.5 text-sm"
+                  >
+                    <span>{b.label}</span>
+                    <span className="text-destructive">-{peso(b.amount)}</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="p-6">
+                <h2 className="font-display text-2xl font-semibold">Payslip History</h2>
+                <ListBody>
+                <Table className="mt-4">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Period</TableHead>
+                      <TableHead>Net</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {payslipPage.pageItems.map((p) => (
+                      <TableRow key={p.period}>
+                        <TableCell className="text-xs">{p.period}</TableCell>
+                        <TableCell className="text-sm">{peso(p.net)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{p.status}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => toast("Payslip downloaded")}
+                          >
+                            Download
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {payslipPage.pageItems.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="py-8">
+                          <ListEmptyState subject="payslips" />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+                </ListBody>
+                <TablePagination
+                  page={payslipPage.page}
+                  pageCount={payslipPage.pageCount}
+                  from={payslipPage.from}
+                  to={payslipPage.to}
+                  total={payslipPage.total}
+                  label="payslips"
+                  onPageChange={payslipPage.setPage}
+                />
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="benefits" className="mt-4">
           <Card className="border-border/70">
             <CardContent className="p-6">
               <h2 className="font-display text-2xl font-semibold">Government &amp; Company Benefits</h2>
@@ -1310,7 +1429,7 @@ export function EmployeeEss() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Category</Label>
-                  <Select value={category} onValueChange={setCategory}>
+                  <Select value={activeCategory?.name ?? ""} onValueChange={setCategory}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -1350,6 +1469,10 @@ export function EmployeeEss() {
               <div className="space-y-2">
                 <Label>Reason / details</Label>
                 <Textarea rows={4} placeholder="Provide details for HR..." />
+                <Textarea
+                  rows={4}
+                  placeholder={activeCategory?.description || "Provide details for HR…"}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Supporting document</Label>
@@ -1367,6 +1490,8 @@ export function EmployeeEss() {
           <Card className="border-border/70">
             <CardContent className="p-6">
               <h2 className="font-display text-2xl font-semibold">All My Requests</h2>
+              <h2 className="font-display text-2xl font-semibold">My Requests</h2>
+              <ListBody>
               <Table className="mt-4">
                 <TableHeader>
                   <TableRow>
@@ -1387,6 +1512,13 @@ export function EmployeeEss() {
                       <TableCell>{getStatusBadge(r.status)}</TableCell>
                     </TableRow>
                   ))}
+                  {minePage.pageItems.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-8">
+                        <ListEmptyState subject="requests" />
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
               <TablePagination
@@ -1398,6 +1530,16 @@ export function EmployeeEss() {
                 label="requests"
                 onPageChange={minePage.setPage}
               />
+              </ListBody>
+                <TablePagination
+                  page={minePage.page}
+                  pageCount={minePage.pageCount}
+                  from={minePage.from}
+                  to={minePage.to}
+                  total={minePage.total}
+                  label="requests"
+                  onPageChange={minePage.setPage}
+                />
             </CardContent>
           </Card>
         </TabsContent>

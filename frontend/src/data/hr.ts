@@ -196,6 +196,43 @@ export type NewHire = {
   phone: string;
 };
 
+/** Checklist request raised for a probationary hire's evaluation cycle. */
+export type ChecklistRequest = {
+  id: string;
+  employee: string;
+  position: string;
+  department: string;
+  requestedAt: string;
+  notes: string;
+  items: string[];
+  status: "Open" | "Checklist created";
+};
+
+export const checklistRequests: ChecklistRequest[] = [
+  {
+    id: "CR-001",
+    employee: "Miguel Torres",
+    position: "Front Desk Receptionist",
+    department: "Front Office",
+    requestedAt: "2026-08-04",
+    notes:
+      "Please include guest-handling scenarios and PMS proficiency checks before the 3rd month review. Supervisor sign-off required for each item.",
+    items: [],
+    status: "Open",
+  },
+  {
+    id: "CR-002",
+    employee: "Andrea Lim",
+    position: "Housekeeping Attendant",
+    department: "Housekeeping",
+    requestedAt: "2026-08-06",
+    notes:
+      "Add room-turnover timing and chemical-handling safety items. Needed for the 5th month evaluation window.",
+    items: [],
+    status: "Open",
+  },
+];
+
 export const newHires: NewHire[] = [
   {
     id: "NH-01",
@@ -439,7 +476,23 @@ export type Employee = {
   email: string;
   phone: string;
   supervisor: string;
-  status: "Active" | "Inactive";
+  status: "Active" | "Probationary" | "Regular" | "Promoted" | "Resigned" | "Retired" | "Terminated" | "Inactive";
+  salaryGrade?: string;
+  promotionHistory?: Array<{
+    date: string;
+    oldPosition: string;
+    newPosition: string;
+    oldSalaryGrade: string;
+    newSalaryGrade: string;
+    notes: string;
+  }>;
+  exitDetails?: {
+    exitType: "Resigned" | "Retired" | "Terminated";
+    exitDate: string;
+    clearanceStatus: "Pending" | "Cleared";
+    coeStatus: "Pending" | "Issued";
+    notes: string;
+  };
 };
 
 export const employees: Employee[] = [
@@ -540,3 +593,152 @@ export const employees: Employee[] = [
     status: "Active",
   },
 ];
+
+export type SalaryGrade = {
+  id: string;
+  code: string;
+  title: string;
+  minSalary: number;
+  maxSalary: number;
+  currency: string;
+  level: "Rank & File" | "Supervisory" | "Managerial" | "Executive";
+  notes?: string;
+};
+
+export const salaryGrades: SalaryGrade[] = [
+  {
+    id: "SG-01",
+    code: "SG-01",
+    title: "Entry Rank & File",
+    minSalary: 14000,
+    maxSalary: 17000,
+    currency: "PHP",
+    level: "Rank & File",
+    notes: "Housekeeping attendants, utility crew",
+  },
+  {
+    id: "SG-05",
+    code: "SG-05",
+    title: "Standard Rank & File",
+    minSalary: 18000,
+    maxSalary: 22000,
+    currency: "PHP",
+    level: "Rank & File",
+    notes: "Front desk receptionist, line cooks",
+  },
+  {
+    id: "SG-08",
+    code: "SG-08",
+    title: "Senior Rank & File",
+    minSalary: 22000,
+    maxSalary: 26000,
+    currency: "PHP",
+    level: "Rank & File",
+    notes: "HR assistant, senior receptionist",
+  },
+  {
+    id: "SG-10",
+    code: "SG-10",
+    title: "Junior Supervisory",
+    minSalary: 26000,
+    maxSalary: 32000,
+    currency: "PHP",
+    level: "Supervisory",
+    notes: "Floor supervisor, guest relations supervisor",
+  },
+  {
+    id: "SG-12",
+    code: "SG-12",
+    title: "Senior Supervisory",
+    minSalary: 32000,
+    maxSalary: 40000,
+    currency: "PHP",
+    level: "Supervisory",
+    notes: "Pastry chef supervisor, assistant manager",
+  },
+  {
+    id: "SG-15",
+    code: "SG-15",
+    title: "Department Manager",
+    minSalary: 45000,
+    maxSalary: 60000,
+    currency: "PHP",
+    level: "Managerial",
+    notes: "Front office manager, executive housekeeper",
+  },
+  {
+    id: "SG-18",
+    code: "SG-18",
+    title: "Executive Director",
+    minSalary: 65000,
+    maxSalary: 90000,
+    currency: "PHP",
+    level: "Executive",
+    notes: "F&B Director, HR Manager, GM",
+  },
+];
+
+export type HR3Recommendation = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  currentType: "Probationary" | "Regular";
+  recommendationType: "Regularization" | "Promotion" | "Performance Review";
+  evaluationScore: number;
+  evaluator: string;
+  dateSubmitted: string;
+  status: "Pending HR Action" | "Approved & Processed" | "Deferred";
+  suggestedPosition?: string;
+  suggestedSalaryGrade?: string;
+  comments: string;
+};
+
+export const hr3Recommendations: HR3Recommendation[] = [
+  {
+    id: "HR3-REC-01",
+    employeeId: "EMP-0004",
+    employeeName: "Camille Ortega",
+    department: "Front Office",
+    currentType: "Probationary",
+    recommendationType: "Regularization",
+    evaluationScore: 94.8,
+    evaluator: "Ana Ramos (Front Office Manager)",
+    dateSubmitted: "2026-08-01",
+    status: "Pending HR Action",
+    suggestedPosition: "Guest Relations Officer",
+    suggestedSalaryGrade: "SG-10 (₱26,000 – ₱32,000)",
+    comments: "Exceeded guest satisfaction metrics during 6-month evaluation window. Highly recommended for full regularization.",
+  },
+  {
+    id: "HR3-REC-02",
+    employeeId: "EMP-0005",
+    employeeName: "Kevin Dela Cruz",
+    department: "Kitchen / Culinary",
+    currentType: "Probationary",
+    recommendationType: "Regularization",
+    evaluationScore: 91.2,
+    evaluator: "Chef Gabriel Mendoza (F&B Director)",
+    dateSubmitted: "2026-07-28",
+    status: "Pending HR Action",
+    suggestedPosition: "Line Cook",
+    suggestedSalaryGrade: "SG-05 (₱18,000 – ₱22,000)",
+    comments: "Punctual, excellent culinary prep speed and kitchen hygiene compliance. Recommended for regularization.",
+  },
+  {
+    id: "HR3-REC-03",
+    employeeId: "EMP-0006",
+    employeeName: "Marjun Devera",
+    department: "Food & Beverage",
+    currentType: "Regular",
+    recommendationType: "Promotion",
+    evaluationScore: 96.5,
+    evaluator: "Chef Gabriel Mendoza",
+    dateSubmitted: "2026-08-03",
+    status: "Pending HR Action",
+    suggestedPosition: "F&B Captain / Service Supervisor",
+    suggestedSalaryGrade: "SG-10 (₱26,000 – ₱32,000)",
+    comments: "Demonstrated strong leadership during banquet events. Passed succession planning assessment with distinction.",
+  },
+];
+

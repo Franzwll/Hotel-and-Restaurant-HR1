@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { CoreHCM } from "@/components/modules/CoreHCM";
+import { OrgChartModule } from "@/components/modules/CoreHCM";
 export const Route = createFileRoute("/superadmin/hcm")({
   head: () => ({
     meta: [
@@ -9,5 +9,5 @@ export const Route = createFileRoute("/superadmin/hcm")({
       { property: "og:description", content: "Departments, organizational chart, job positions and vacancy requisitions." },
     ],
   }),
-  component: () => <CoreHCM role="superadmin" />,
+  component: () => <OrgChartModule role="superadmin" />,
 });
