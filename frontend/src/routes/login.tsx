@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import loginHero from "@/assets/login-hospitality.jpg";
+import loginHero from "@/assets/o-suiteb.png";
 import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -79,13 +79,26 @@ const brigades = [
   "Engineering",
 ];
 
-import loginLobby from "@/assets/login-lobby.png";
-import loginDining from "@/assets/login-dining.jpg";
+import loginLobby from "@/assets/o-suite1b.png";
+import loginLobby1 from "@/assets/oxford-suite-makati-interior2.png";
+import loginLobby2 from "@/assets/oxford-suite-makati-interior3b.png";
+import loginDining from "@/assets/o-suite2b.png";
+import loginLobby3 from "@/assets/content1.png";
 
 const montageImages = [
   {
+    src: loginLobby3,
+    alt: "Oxford Suites Makati grand circular lobby with ceiling light, sunburst marble floor and dark wood front desk",
+    animation: "animate-[kenburns-1_20s_infinite_alternate_ease-in-out]",
+  },
+  {
     src: loginLobby,
     alt: "Oxford Suites Makati grand circular lobby with ceiling light, sunburst marble floor and dark wood front desk",
+    animation: "animate-[kenburns-1_20s_infinite_alternate_ease-in-out]",
+  },
+  {
+    src: loginLobby1,
+    alt: "Oxford Suites Makati grand circular front lobby with ceiling light, sunburst marble floor and dark wood front desk",
     animation: "animate-[kenburns-1_20s_infinite_alternate_ease-in-out]",
   },
   {
@@ -95,6 +108,11 @@ const montageImages = [
   },
   {
     src: loginHero,
+    alt: "Oxford Suites Makati hospitality floor view",
+    animation: "animate-[kenburns-3_20s_infinite_alternate_ease-in-out]",
+  },
+  {
+    src: loginLobby2,
     alt: "Oxford Suites Makati hospitality floor view",
     animation: "animate-[kenburns-3_20s_infinite_alternate_ease-in-out]",
   },
