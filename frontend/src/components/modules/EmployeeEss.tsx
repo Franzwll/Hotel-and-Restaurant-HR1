@@ -10,13 +10,18 @@ import {
   Search,
   ArrowUpDown,
   Send,
-  Building
+  Building,
+  ArrowRight,
+  Download,
+  FileCheck,
+  CheckCircle2,
+  AlertCircle,
+  Upload,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/portal/PageHeader";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { usePagination } from "@/hooks/usePagination";
-import { StatCard } from "@/components/portal/StatCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,6 +54,8 @@ import {
   myProfile,
   mySchedule,
   myPerformance,
+  myLearningCourses,
+  myEmployeeDocuments,
   wireframeActivity,
   requestCategories,
 } from "@/data/ess";
@@ -59,7 +66,7 @@ type RequestItem = {
   type: string;
   date: string;
   isoDate: string;
-  status: "Pending" | "Approved" | "Rejected" | "Released";
+  status: "Pending" | "Approved" | "Rejected" | "Released" | "Completed" | "Available" | "Submitted" | "Missing";
   statusRank: number;
 };
 
@@ -80,10 +87,11 @@ export function EmployeeEss() {
   }, [searchStr]);
 
   // Dynamic state for active activity table
-  const [activities, setActivities] = useState<RequestItem[]>(wireframeActivity as RequestItem[]);
+  const [activities] = useState<RequestItem[]>(wireframeActivity as RequestItem[]);
 
-  // Search & Sort states for Overview Recent Activity
+  // Search, Category filter, & Sort states for Overview Recent Activity
   const [raSearch, setRaSearch] = useState("");
+  const [raCategory, setRaCategory] = useState("all");
   const [raSort, setRaSort] = useState("date-desc");
 
   // Search & Sort states for Attendance Requests
@@ -130,22 +138,20 @@ export function EmployeeEss() {
   const [promoJustification, setPromoJustification] = useState("");
   const [lastPromo, setLastPromo] = useState(myPerformance.lastPromotionRequest);
 
-  // Counts calculation
-  const pendingAttCount = attRequests.filter((r) => r.status === "Pending").length;
-  const pendingPayCount = payRequests.filter((r) => r.status === "Pending").length;
-  const pendingPerfCount = lastPromo.status === "Pending" ? 1 : 0;
-  const pendingDocCount = docRequests.filter((r) => r.status === "Pending").length;
-
   // Filtered & Sorted Recent Activity
   const filteredActivities = useMemo(() => {
     return activities
-      .filter(
-        (item) =>
-          !raSearch ||
-          item.category.toLowerCase().includes(raSearch.toLowerCase()) ||
-          item.type.toLowerCase().includes(raSearch.toLowerCase()) ||
-          item.status.toLowerCase().includes(raSearch.toLowerCase())
-      )
+      .filter((item) => {
+        if (raCategory !== "all" && item.category !== raCategory) return false;
+        if (
+          raSearch &&
+          !`${item.category} ${item.type} ${item.status}`
+            .toLowerCase()
+            .includes(raSearch.toLowerCase())
+        )
+          return false;
+        return true;
+      })
       .sort((a, b) => {
         if (raSort === "date-desc") return b.isoDate.localeCompare(a.isoDate);
         if (raSort === "date-asc") return a.isoDate.localeCompare(b.isoDate);
@@ -153,7 +159,7 @@ export function EmployeeEss() {
         if (raSort === "category") return a.category.localeCompare(b.category);
         return 0;
       });
-  }, [activities, raSearch, raSort]);
+  }, [activities, raSearch, raCategory, raSort]);
 
   // Filtered & Sorted Attendance Requests
   const filteredAttRequests = useMemo(() => {
@@ -207,7 +213,6 @@ export function EmployeeEss() {
     const isoStr = new Date().toISOString().slice(0, 10);
     const newReq = { date: todayStr, isoDate: isoStr, type: attType, status: "Pending" as const, statusRank: 0 };
     setAttRequests([newReq, ...attRequests]);
-    setActivities([{ category: "Attendance", type: attType, date: todayStr, isoDate: isoStr, status: "Pending", statusRank: 0 }, ...activities]);
     toast.success(`${attType} request submitted successfully.`);
     setAttDetails("");
   };
@@ -218,7 +223,6 @@ export function EmployeeEss() {
     const isoStr = new Date().toISOString().slice(0, 10);
     const newReq = { date: todayStr, isoDate: isoStr, type: payType, status: "Pending" as const, statusRank: 0 };
     setPayRequests([newReq, ...payRequests]);
-    setActivities([{ category: "Payroll", type: payType, date: todayStr, isoDate: isoStr, status: "Pending", statusRank: 0 }, ...activities]);
     toast.success(`${payType} request submitted successfully.`);
     setPayPeriod("");
     setPayDetails("");
@@ -230,7 +234,6 @@ export function EmployeeEss() {
     const isoStr = new Date().toISOString().slice(0, 10);
     const newReq = { date: todayStr, isoDate: isoStr, type: docType, status: "Pending" as const, statusRank: 0 };
     setDocRequests([newReq, ...docRequests]);
-    setActivities([{ category: "Documents", type: docType, date: todayStr, isoDate: isoStr, status: "Pending", statusRank: 0 }, ...activities]);
     toast.success(`${docType} request submitted successfully.`);
     setDocPurpose("");
   };
@@ -239,9 +242,7 @@ export function EmployeeEss() {
     e.preventDefault();
     if (!promoPosition) return;
     const todayStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    const isoStr = new Date().toISOString().slice(0, 10);
     setLastPromo({ position: promoPosition, status: "Pending", date: todayStr });
-    setActivities([{ category: "Performance", type: `Promotion: ${promoPosition}`, date: todayStr, isoDate: isoStr, status: "Pending", statusRank: 0 }, ...activities]);
     toast.success("Promotion request submitted successfully.");
     setPromoPosition("");
     setPromoJustification("");
@@ -253,9 +254,15 @@ export function EmployeeEss() {
         return <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">Pending</Badge>;
       case "Approved":
         return <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">Approved</Badge>;
-      case "Released":
       case "Completed":
-        return <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30">Released</Badge>;
+        return <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">Completed</Badge>;
+      case "Available":
+      case "Released":
+        return <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30">{status}</Badge>;
+      case "Submitted":
+        return <Badge variant="outline" className="bg-purple-500/10 text-purple-600 border-purple-500/30">Submitted</Badge>;
+      case "Missing":
+        return <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/30">Missing</Badge>;
       case "Rejected":
         return <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/30">Rejected</Badge>;
       default:
@@ -276,22 +283,22 @@ export function EmployeeEss() {
       case "documents":
         return "Employee Self-Service · Company Documents";
       default:
-        return "Employee Self-Service";
+        return "EMPLOYEE SELF-SERVICE";
     }
   };
 
   const getPageDescription = () => {
     switch (activeTab) {
       case "attendance":
-        return "Submit time-in/time-out corrections and track attendance request status.";
+        return "View attendance logs, daily time-in/out records, and file correction requests.";
       case "payroll":
-        return "Submit overtime requests, request payslips, and process payroll clarifications.";
+        return "View net pay information, payslips history, breakdown details, and submit inquiries.";
       case "performance":
-        return "Track performance reviews, LMS learning courses, and submit promotion requests.";
+        return "Track LMS learning modules, view evaluation scores, competency rating, and promotion applications.";
       case "documents":
-        return "Request BIR Form 2316, Certificate of Employment, and official HR documents.";
+        return "View submitted, missing, and available employee documents and request official HR records.";
       default:
-        return "Submit requests, track their status, and manage your employment documents without visiting HR.";
+        return "View your employee information, activities, and HR services.";
     }
   };
 
@@ -317,19 +324,126 @@ export function EmployeeEss() {
 
         {/* OVERVIEW TAB */}
         <TabsContent value="overview" className="mt-6 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Attendance" value={`${pendingAttCount} pending`} hint="Last request: Jul 20, 2026" icon={Clock} tone="primary" onClick={() => setActiveTab("attendance")} />
-            <StatCard label="Payroll" value={`${pendingPayCount} pending`} hint="Last request: Jul 28, 2026" icon={FileText} tone="gold" onClick={() => setActiveTab("payroll")} />
-            <StatCard label="Performance" value={`${pendingPerfCount} pending`} hint="Last request: Jul 15, 2026" icon={TrendingUp} tone="success" onClick={() => setActiveTab("performance")} />
-            <StatCard label="Documents" value={`${pendingDocCount} pending`} hint="Last request: Jun 1, 2026" icon={FileText} onClick={() => setActiveTab("documents")} />
+          {/* Summary Cards with Real Employee Info */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* ATTENDANCE Summary Card */}
+            <Card className="border-border/70 flex flex-col justify-between">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase font-semibold text-muted-foreground tracking-wider">Attendance</span>
+                  <div className="rounded-md bg-primary/10 p-2 text-primary">
+                    <Clock className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <p className="text-2xl font-bold font-display text-foreground">
+                    {myAttendance.monthly.present} Present <span className="text-sm font-normal text-muted-foreground">· {myAttendance.monthly.late} Late</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Today Time In: {myAttendance.today.timeIn}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-4 w-full justify-between p-0 h-auto font-medium text-primary hover:bg-transparent hover:text-primary/80"
+                  onClick={() => setActiveTab("attendance")}
+                >
+                  <span>View →</span>
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* PAYROLL Summary Card */}
+            <Card className="border-border/70 flex flex-col justify-between">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase font-semibold text-muted-foreground tracking-wider">Payroll</span>
+                  <div className="rounded-md bg-emerald-500/10 p-2 text-emerald-600">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <p className="text-2xl font-bold font-display text-foreground">
+                    ₱{myPayroll.net.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Next Payout: {myPayroll.nextPayout}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-4 w-full justify-between p-0 h-auto font-medium text-primary hover:bg-transparent hover:text-primary/80"
+                  onClick={() => setActiveTab("payroll")}
+                >
+                  <span>View →</span>
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* PERFORMANCE Summary Card */}
+            <Card className="border-border/70 flex flex-col justify-between">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase font-semibold text-muted-foreground tracking-wider">Performance</span>
+                  <div className="rounded-md bg-purple-500/10 p-2 text-purple-600">
+                    <TrendingUp className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <p className="text-2xl font-bold font-display text-foreground">
+                    {myPerformance.lmsCoursesCompleted}/{myPerformance.lmsCoursesAssigned} Courses
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Avg Score: {myPerformance.averageScore || "90%"} · {myPerformance.competencyLevel}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-4 w-full justify-between p-0 h-auto font-medium text-primary hover:bg-transparent hover:text-primary/80"
+                  onClick={() => setActiveTab("performance")}
+                >
+                  <span>View →</span>
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* DOCUMENTS Summary Card */}
+            <Card className="border-border/70 flex flex-col justify-between">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase font-semibold text-muted-foreground tracking-wider">Documents</span>
+                  <div className="rounded-md bg-blue-500/10 p-2 text-blue-600">
+                    <FileCheck className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <p className="text-2xl font-bold font-display text-foreground">
+                    {myEmployeeDocuments.filter((d) => d.status === "Submitted" || d.status === "Available" || d.status === "Released").length} Submitted
+                  </p>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                    {myEmployeeDocuments.filter((d) => d.status === "Missing").length} Missing requirement
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-4 w-full justify-between p-0 h-auto font-medium text-primary hover:bg-transparent hover:text-primary/80"
+                  onClick={() => setActiveTab("documents")}
+                >
+                  <span>View →</span>
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </CardContent>
+            </Card>
           </div>
 
+          {/* RECENT ACTIVITIES TABLE */}
           <Card className="border-border/70">
             <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-3">
               <div>
                 <CardTitle className="font-display text-xl font-semibold flex items-center gap-2">
                   <Clock className="h-5 w-5 text-primary" />
-                  Recent Activity
+                  RECENT ACTIVITIES
                 </CardTitle>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -342,15 +456,27 @@ export function EmployeeEss() {
                     className="pl-8 h-9 w-[160px] sm:w-[200px]"
                   />
                 </div>
-                <Select value={raSort} onValueChange={setRaSort}>
+                <Select value={raCategory} onValueChange={setRaCategory}>
                   <SelectTrigger className="h-9 w-[150px]">
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    <SelectItem value="Attendance">Attendance</SelectItem>
+                    <SelectItem value="Payroll">Payroll</SelectItem>
+                    <SelectItem value="Performance">Performance</SelectItem>
+                    <SelectItem value="Documents">Documents</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={raSort} onValueChange={setRaSort}>
+                  <SelectTrigger className="h-9 w-[140px]">
                     <ArrowUpDown className="mr-2 h-3.5 w-3.5" />
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="date-desc">Newest first</SelectItem>
                     <SelectItem value="date-asc">Oldest first</SelectItem>
-                    <SelectItem value="status">Status (pending first)</SelectItem>
+                    <SelectItem value="status">Status</SelectItem>
                     <SelectItem value="category">Category</SelectItem>
                   </SelectContent>
                 </Select>
@@ -360,8 +486,8 @@ export function EmployeeEss() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Activity</TableHead>
                     <TableHead>Category</TableHead>
-                    <TableHead>Request Type</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
@@ -376,8 +502,8 @@ export function EmployeeEss() {
                   ) : (
                     raPage.pageItems.map((item, idx) => (
                       <TableRow key={idx}>
-                        <TableCell className="font-medium text-xs">{item.category}</TableCell>
-                        <TableCell className="text-sm">{item.type}</TableCell>
+                        <TableCell className="font-medium text-sm">{item.type}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{item.category}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{item.date}</TableCell>
                         <TableCell>{getStatusBadge(item.status)}</TableCell>
                       </TableRow>
@@ -399,11 +525,90 @@ export function EmployeeEss() {
         </TabsContent>
 
         {/* ATTENDANCE TAB */}
-        <TabsContent value="attendance" className="mt-6">
+        <TabsContent value="attendance" className="mt-6 space-y-6">
+          {/* Summary Cards */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <p className="eyebrow">Today Time In</p>
+                <p className="mt-1 text-2xl font-bold font-display text-emerald-600">{myAttendance.today.timeIn}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Time Out: {myAttendance.today.timeOut}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <p className="eyebrow">Monthly Attendance</p>
+                <p className="mt-1 text-2xl font-bold font-display">{myAttendance.monthly.present} Days Present</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{myAttendance.monthly.late} Late · {myAttendance.monthly.absent} Absent</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <p className="eyebrow">Overtime Hours</p>
+                <p className="mt-1 text-2xl font-bold font-display text-primary">{myAttendance.monthly.overtimeHours} hrs</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Approved overtime this month</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <p className="eyebrow">Break Shift Status</p>
+                <p className="mt-1 text-sm font-semibold">{myAttendance.today.breakIn} – {myAttendance.today.breakOut}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Lunch break completed</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Attendance History Table */}
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle className="font-display text-xl font-semibold">Attendance Log History</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Time In</TableHead>
+                    <TableHead>Time Out</TableHead>
+                    <TableHead>Hours Worked</TableHead>
+                    <TableHead>Remark</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {myAttendance.history.map((h, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="font-medium text-xs">{h.date}</TableCell>
+                      <TableCell className="text-xs">{h.in}</TableCell>
+                      <TableCell className="text-xs">{h.out}</TableCell>
+                      <TableCell className="text-xs">{h.hours} hrs</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            h.remark.includes("Present")
+                              ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-xs"
+                              : h.remark.includes("Late")
+                              ? "bg-amber-500/10 text-amber-600 border-amber-500/30 text-xs"
+                              : "bg-purple-500/10 text-purple-600 border-purple-500/30 text-xs"
+                          }
+                        >
+                          {h.remark}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border/70">
               <CardHeader>
-                <CardTitle className="font-display text-xl font-semibold">New Attendance Request</CardTitle>
+                <CardTitle className="font-display text-xl font-semibold">Submit Attendance Correction</CardTitle>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleAttSubmit} className="space-y-4">
@@ -425,7 +630,7 @@ export function EmployeeEss() {
                     <Input type="date" value={attDate} onChange={(e) => setAttDate(e.target.value)} required />
                   </div>
                   <div className="space-y-2">
-                    <Label>Details</Label>
+                    <Label>Details / Reason</Label>
                     <Textarea
                       rows={3}
                       placeholder="Explain the correction needed..."
@@ -497,11 +702,110 @@ export function EmployeeEss() {
         </TabsContent>
 
         {/* PAYROLL TAB */}
-        <TabsContent value="payroll" className="mt-6">
+        <TabsContent value="payroll" className="mt-6 space-y-6">
+          {/* Summary Cards */}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <p className="eyebrow">Net Pay (Latest Cut-off)</p>
+                <p className="mt-1 text-3xl font-bold font-display text-emerald-600">₱{myPayroll.net.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground mt-1">Next payout: {myPayroll.nextPayout}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <p className="eyebrow">Gross Salary</p>
+                <p className="mt-1 text-2xl font-bold font-display">₱{myPayroll.gross.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground mt-1">Includes basic pay, OT &amp; allowances</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <p className="eyebrow">Total Deductions</p>
+                <p className="mt-1 text-2xl font-bold font-display text-rose-600">₱{(myPayroll.gross - myPayroll.net).toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground mt-1">SSS, PhilHealth, Pag-IBIG &amp; Tax</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Pay Breakdown */}
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="font-display text-xl font-semibold">Pay Breakdown &amp; Deductions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Earnings</h4>
+                  <div className="space-y-1.5 border-t border-border pt-2 text-sm">
+                    {myPayroll.breakdown.map((item, i) => (
+                      <div key={i} className="flex justify-between">
+                        <span className="text-muted-foreground">{item.label}</span>
+                        <span className="font-medium text-foreground">₱{item.amount.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Deductions</h4>
+                  <div className="space-y-1.5 border-t border-border pt-2 text-sm">
+                    {myPayroll.deductions.map((item, i) => (
+                      <div key={i} className="flex justify-between text-rose-600 dark:text-rose-400">
+                        <span className="text-muted-foreground">{item.label}</span>
+                        <span className="font-medium">-₱{item.amount.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Payslips History */}
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="font-display text-xl font-semibold">Released Payslips</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Pay Period</TableHead>
+                      <TableHead>Net Pay</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {myPayroll.payslips.map((ps, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="font-medium text-xs">{ps.period}</TableCell>
+                        <TableCell className="text-xs font-semibold">₱{ps.net.toLocaleString()}</TableCell>
+                        <TableCell>{getStatusBadge(ps.status)}</TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-xs font-medium text-primary hover:bg-primary/10"
+                            onClick={() => toast.success(`Downloading payslip for ${ps.period}`)}
+                          >
+                            <Download className="mr-1 h-3.5 w-3.5" /> PDF
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border/70">
               <CardHeader>
-                <CardTitle className="font-display text-xl font-semibold">New Payroll Request</CardTitle>
+                <CardTitle className="font-display text-xl font-semibold">Submit Payroll Inquiry / Request</CardTitle>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handlePaySubmit} className="space-y-4">
@@ -514,7 +818,7 @@ export function EmployeeEss() {
                       <SelectContent>
                         <SelectItem value="Payroll Clarification">Payroll Clarification</SelectItem>
                         <SelectItem value="Overtime Request">Overtime Request</SelectItem>
-                        <SelectItem value="Payslip Request">Payslip Request</SelectItem>
+                        <SelectItem value="Payslip Request">Payslip Copy Request</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -531,7 +835,7 @@ export function EmployeeEss() {
                     <Label>Details</Label>
                     <Textarea
                       rows={3}
-                      placeholder="Describe your request..."
+                      placeholder="Describe your payroll inquiry or overtime breakdown..."
                       value={payDetails}
                       onChange={(e) => setPayDetails(e.target.value)}
                       required
@@ -612,15 +916,15 @@ export function EmployeeEss() {
 
             <Card className="border-border/70">
               <CardContent className="p-4">
-                <div className="eyebrow flex items-center gap-1.5"><Award className="h-3.5 w-3.5 text-primary" /> Competency Assessment</div>
+                <div className="eyebrow flex items-center gap-1.5"><Award className="h-3.5 w-3.5 text-primary" /> Competency Rating</div>
                 <p className="mt-1 text-sm font-semibold">{myPerformance.competencyLevel}</p>
-                <p className="text-xs text-muted-foreground mt-1">Assessed: {myPerformance.lastAssessed}</p>
+                <p className="text-xs text-muted-foreground mt-1">Average Score: {myPerformance.averageScore}</p>
               </CardContent>
             </Card>
 
             <Card className="border-border/70">
               <CardContent className="p-4">
-                <div className="eyebrow flex items-center gap-1.5"><BookOpen className="h-3.5 w-3.5 text-primary" /> Learning Courses</div>
+                <div className="eyebrow flex items-center gap-1.5"><BookOpen className="h-3.5 w-3.5 text-primary" /> LMS Courses</div>
                 <p className="mt-1 text-sm font-semibold">{myPerformance.lmsCoursesCompleted} of {myPerformance.lmsCoursesAssigned} Completed</p>
                 <Progress value={(myPerformance.lmsCoursesCompleted / myPerformance.lmsCoursesAssigned) * 100} className="mt-2 h-1.5" />
               </CardContent>
@@ -635,6 +939,63 @@ export function EmployeeEss() {
             </Card>
           </div>
 
+          {/* LMS Learning Courses & Scores Table */}
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle className="font-display text-xl font-semibold flex items-center gap-2">
+                <BookOpen className="h-5 w-5 text-primary" />
+                Learning Modules &amp; Course Scores
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Course Title</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Score</TableHead>
+                    <TableHead>Date Completed</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {myLearningCourses.map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell className="font-medium text-sm">{c.title}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{c.category}</TableCell>
+                      <TableCell>{getStatusBadge(c.status)}</TableCell>
+                      <TableCell className="text-xs font-semibold">{c.score}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{c.completedDate}</TableCell>
+                      <TableCell>
+                        {c.status === "Completed" ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-xs text-emerald-600 hover:bg-emerald-50"
+                            onClick={() => toast.success(`Viewing certificate for ${c.title}`)}
+                          >
+                            <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Certificate
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs"
+                            onClick={() => toast.info(`Resuming ${c.title}`)}
+                          >
+                            Continue
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Promotion Request */}
           <Card className="border-border/70">
             <CardHeader>
               <CardTitle className="font-display text-xl font-semibold">Promotion Request</CardTitle>
@@ -687,7 +1048,98 @@ export function EmployeeEss() {
         </TabsContent>
 
         {/* DOCUMENTS TAB */}
-        <TabsContent value="documents" className="mt-6">
+        <TabsContent value="documents" className="mt-6 space-y-6">
+          {/* Documents Overview Cards */}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <p className="eyebrow">Submitted Documents</p>
+                <p className="mt-1 text-2xl font-bold font-display text-emerald-600">
+                  {myEmployeeDocuments.filter((d) => d.status === "Submitted" || d.status === "Available" || d.status === "Released").length} File(s)
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Verified by HR Administration</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <p className="eyebrow">Missing Requirements</p>
+                <p className="mt-1 text-2xl font-bold font-display text-rose-600">
+                  {myEmployeeDocuments.filter((d) => d.status === "Missing").length} Action Item
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Please submit missing documents</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardContent className="p-4">
+                <p className="eyebrow">Available for Download</p>
+                <p className="mt-1 text-2xl font-bold font-display text-primary">
+                  {myEmployeeDocuments.filter((d) => d.status === "Available" || d.status === "Released").length} Documents
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">COE, BIR 2316 &amp; Certifications</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Employee Documents Table */}
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle className="font-display text-xl font-semibold flex items-center gap-2">
+                <FileCheck className="h-5 w-5 text-primary" />
+                My Employment Documents
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Document Title</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {myEmployeeDocuments.map((doc) => (
+                    <TableRow key={doc.id}>
+                      <TableCell className="font-medium text-sm">{doc.title}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{doc.category}</TableCell>
+                      <TableCell>{getStatusBadge(doc.status)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{doc.date}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{doc.size}</TableCell>
+                      <TableCell>
+                        {doc.status === "Available" || doc.status === "Released" ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-xs text-primary hover:bg-primary/10"
+                            onClick={() => toast.success(`Downloading ${doc.title}`)}
+                          >
+                            <Download className="mr-1 h-3.5 w-3.5" /> Download
+                          </Button>
+                        ) : doc.status === "Missing" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs border-amber-500/50 text-amber-600 hover:bg-amber-50"
+                            onClick={() => toast.info(`Opening upload modal for ${doc.title}`)}
+                          >
+                            <Upload className="mr-1 h-3.5 w-3.5" /> Upload
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">On File</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border/70">
               <CardHeader>

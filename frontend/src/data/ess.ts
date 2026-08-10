@@ -111,9 +111,9 @@ export const requestCategories = [
 ];
 
 export const myProfile = {
-  employeeId: "EMP-0005",
-  name: "Kevin Dela Cruz",
-  initials: "KDC",
+  employeeId: "OSM-2026-0142",
+  name: "Kevin Santos",
+  initials: "KS",
   position: "Line Cook",
   department: "Kitchen / Culinary",
   branch: "Oxford Suites Makati",
@@ -121,10 +121,10 @@ export const myProfile = {
   dateHired: "2026-04-15",
   employmentType: "Probationary",
   status: "Active",
-  email: "kevin.delacruz@oxfordsuites.com.ph",
+  email: "kevin.santos@oxfordsuites.com.ph",
   phone: "0921 774 9903",
   address: "14 Kalayaan Ave, Makati City",
-  emergencyContact: "Liza Dela Cruz — 0918 222 4410 (Spouse)",
+  emergencyContact: "Liza Santos — 0918 222 4410 (Spouse)",
   onboardingComplete: false,
 };
 
@@ -246,6 +246,7 @@ export const myPerformance = {
   lastAssessed: "Jan 2026",
   lmsCoursesAssigned: 3,
   lmsCoursesCompleted: 2,
+  averageScore: "90%",
   salaryGrade: "SG-8",
   salaryStep: "Step 2",
   lastPromotionRequest: {
@@ -255,13 +256,34 @@ export const myPerformance = {
   },
 };
 
+export const myLearningCourses = [
+  { id: "LMS-101", title: "Food Safety & Sanitation Level 2", category: "Culinary & Safety", status: "Completed", score: "95%", completedDate: "Jul 10, 2026" },
+  { id: "LMS-102", title: "Customer Excellence in Hospitality", category: "Service Quality", status: "Completed", score: "88%", completedDate: "Jun 24, 2026" },
+  { id: "LMS-103", title: "Fire Safety & Emergency Response", category: "Compliance", status: "In Progress", score: "—", completedDate: "—" },
+];
+
+export const myEmployeeDocuments = [
+  { id: "DOC-001", title: "BIR Form 2316 (2025)", category: "Tax Document", status: "Available", date: "Jan 15, 2026", size: "240 KB" },
+  { id: "DOC-002", title: "Certificate of Employment (COE)", category: "Employment", status: "Released", date: "Jun 01, 2026", size: "180 KB" },
+  { id: "DOC-003", title: "Medical Clearance Certificate", category: "Onboarding", status: "Submitted", date: "Feb 03, 2026", size: "1.2 MB" },
+  { id: "DOC-004", title: "Social Security System (SSS) Form E-1", category: "Government ID", status: "Submitted", date: "Feb 02, 2026", size: "310 KB" },
+  { id: "DOC-005", title: "Updated NBI Clearance (2026)", category: "Clearance", status: "Missing", date: "—", size: "—" },
+];
+
 export const wireframeActivity = [
-  { category: "Payroll", type: "Overtime Request", date: "Jul 28, 2026", isoDate: "2026-07-28", status: "Pending", statusRank: 0 },
-  { category: "Attendance", type: "Missed Time Out", date: "Jul 20, 2026", isoDate: "2026-07-20", status: "Pending", statusRank: 0 },
-  { category: "Performance", type: "Promotion Request", date: "Jul 15, 2026", isoDate: "2026-07-15", status: "Pending", statusRank: 0 },
-  { category: "Payroll", type: "Overtime Request", date: "Jun 18, 2026", isoDate: "2026-06-18", status: "Approved", statusRank: 1 },
-  { category: "Documents", type: "Certificate of Employment", date: "Jun 1, 2026", isoDate: "2026-06-01", status: "Released", statusRank: 1 },
-  { category: "Documents", type: "HMO Certification", date: "Feb 3, 2026", isoDate: "2026-02-03", status: "Released", statusRank: 1 },
+  { category: "Attendance", type: "Daily Time In (07:52 AM)", date: "Aug 10, 2026", isoDate: "2026-08-10", status: "Completed", statusRank: 1 },
+  { category: "Payroll", type: "July 2nd Cut-off Payslip", date: "Aug 05, 2026", isoDate: "2026-08-05", status: "Available", statusRank: 1 },
+  { category: "Performance", type: "Food Safety Level 2 Course", date: "Aug 02, 2026", isoDate: "2026-08-02", status: "Completed", statusRank: 1 },
+  { category: "Payroll", type: "Overtime Request (4 Hours)", date: "Jul 28, 2026", isoDate: "2026-07-28", status: "Pending", statusRank: 0 },
+  { category: "Attendance", type: "Missed Time Out Correction", date: "Jul 20, 2026", isoDate: "2026-07-20", status: "Pending", statusRank: 0 },
+  { category: "Performance", type: "Senior Line Cook Promotion Application", date: "Jul 15, 2026", isoDate: "2026-07-15", status: "Pending", statusRank: 0 },
+  { category: "Documents", type: "Certificate of Employment Request", date: "Jul 01, 2026", isoDate: "2026-07-01", status: "Released", statusRank: 1 },
+  { category: "Payroll", type: "June 2nd Cut-off Payslip", date: "Jun 20, 2026", isoDate: "2026-06-20", status: "Available", statusRank: 1 },
+  { category: "Payroll", type: "Overtime Request (2 Hours)", date: "Jun 18, 2026", isoDate: "2026-06-18", status: "Approved", statusRank: 1 },
+  { category: "Performance", type: "Customer Excellence Course", date: "Jun 14, 2026", isoDate: "2026-06-14", status: "Completed", statusRank: 1 },
+  { category: "Documents", type: "BIR Form 2316 Copy Request", date: "Jun 01, 2026", isoDate: "2026-06-01", status: "Released", statusRank: 1 },
+  { category: "Attendance", type: "Time In Correction (Late Override)", date: "May 22, 2026", isoDate: "2026-05-22", status: "Approved", statusRank: 1 },
+  { category: "Documents", type: "HMO Card Certification", date: "Feb 03, 2026", isoDate: "2026-02-03", status: "Released", statusRank: 1 },
 ];
 
 export const myLoginActivity = [
@@ -269,4 +291,5 @@ export const myLoginActivity = [
   { device: "Mobile App · Android", location: "Makati City, PH", time: "Jul 30, 2026, 6:45 PM", date: "2026-07-30T18:45" },
   { device: "Edge · Windows", location: "Makati City, PH", time: "Jul 25, 2026, 9:30 AM", date: "2026-07-25T09:30" },
 ];
+
 
