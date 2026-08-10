@@ -541,6 +541,7 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
 
   const hirePage = usePagination(visible);
   const reqPage = usePagination(requestedItems, 6);
+  const checklistPage = usePagination(masterChecklists, 3);
 
   const selectStage = (s: Stage) => {
     setStage(s);
@@ -1369,7 +1370,7 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
 
                 <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
                   <div className="order-2 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-                    {masterChecklists.map((c) => (
+                    {checklistPage.pageItems.map((c) => (
                       <div key={c.id} className="rounded-lg border border-border p-4">
                         {editingChecklistId === c.id ? (
                           <>
@@ -1706,12 +1707,24 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                     )}
                   </div>
                 </div>
+
+                <div className="shrink-0 border-t border-border/60 pt-3">
+                  <TablePagination
+                    page={checklistPage.page}
+                    pageCount={checklistPage.pageCount}
+                    from={checklistPage.from}
+                    to={checklistPage.to}
+                    total={checklistPage.total}
+                    label="checklists"
+                    onPageChange={checklistPage.setPage}
+                  />
+                </div>
               </CardContent>
             </Card>
 
             {/* REQUESTED CHECKLISTS — reference items raised by Performance for checklist creation. */}
             <Card className="flex h-[46rem] flex-col border-border/70 xl:order-1">
-              <CardContent className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
+              <CardContent className="flex min-h-0 flex-1 flex-col p-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="font-display text-2xl font-semibold">Requested Checklists</h2>
@@ -1761,7 +1774,7 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                   </div>
                 </div>
 
-                <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+                <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-lg border border-border">
                   <table className="w-full text-sm">
                     <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
                       <tr>
@@ -1878,15 +1891,17 @@ export function NewHireOnboarding({ role }: { role: "superadmin" | "admin" }) {
                     </tbody>
                   </table>
                 </div>
-                <TablePagination
-                  page={reqPage.page}
-                  pageCount={reqPage.pageCount}
-                  from={reqPage.from}
-                  to={reqPage.to}
-                  total={reqPage.total}
-                  label="requests"
-                  onPageChange={reqPage.setPage}
-                />
+                <div className="shrink-0 border-t border-border/60 pt-3">
+                  <TablePagination
+                    page={reqPage.page}
+                    pageCount={reqPage.pageCount}
+                    from={reqPage.from}
+                    to={reqPage.to}
+                    total={reqPage.total}
+                    label="requests"
+                    onPageChange={reqPage.setPage}
+                  />
+                </div>
               </CardContent>
             </Card>
           </div>
