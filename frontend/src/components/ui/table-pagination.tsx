@@ -9,8 +9,6 @@ interface TablePaginationProps {
   total: number;
   /** Plural noun used in the "Showing 1–10 of 24 records" label. */
   label?: string;
-  /** Hides the "Showing 1–10 of 24" range text, keeping only the page buttons. */
-  hideRange?: boolean;
   onPageChange: (page: number) => void;
   className?: string;
 }
@@ -23,26 +21,16 @@ export function TablePagination({
   to,
   total,
   label = "records",
-  hideRange = false,
   onPageChange,
   className,
 }: TablePaginationProps) {
-  return (
-    <div
-      className={cn(
-        "mt-4 flex flex-wrap items-center gap-3",
-        hideRange ? "justify-end" : "justify-between",
-        className,
-      )}
-    >
-      {!hideRange && (
-        <p className="text-xs text-muted-foreground">
-          Showing {from}–{to} of {total} {label}
-        </p>
-      )}
+  if (total === 0) return null;
 
-      {/* Always rendered — with a single page the controls stay visible but inert
-          so the table footer never shifts between searches. */}
+  return (
+    <div className={cn("mt-4 flex flex-wrap items-center justify-between gap-3", className)}>
+      <p className="text-xs text-muted-foreground">
+        Showing {from}–{to} of {total} {label}
+      </p>
       <div className="flex items-center gap-1">
         <Button
           size="sm"
@@ -52,13 +40,12 @@ export function TablePagination({
         >
           Previous
         </Button>
-        {Array.from({ length: Math.max(1, pageCount) }, (_, i) => i + 1).map((p) => (
+        {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
           <Button
             key={p}
             size="sm"
             variant={p === page ? "default" : "outline"}
             className="w-9"
-            disabled={pageCount <= 1}
             onClick={() => onPageChange(p)}
           >
             {p}
