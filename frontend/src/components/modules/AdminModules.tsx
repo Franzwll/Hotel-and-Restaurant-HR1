@@ -1299,6 +1299,7 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
     "Email notifications": true,
     "Browser notifications": true,
     "System announcements": true,
+    "Payday & Request SMS alerts": true,
   });
   const [prefs, setPrefs] = useState({
     theme: "light",
@@ -1314,6 +1315,13 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
     address: "Ayala Center, Makati City",
     hours: "24/7 Front Desk Operations",
   });
+  const [empProfile, setEmpProfile] = useState({
+    email: myProfile.email,
+    phone: myProfile.phone,
+    address: myProfile.address,
+    emergencyContact: myProfile.emergencyContact,
+  });
+
   const setPref = (key: keyof typeof prefs) => (v: string) => setPrefs((p) => ({ ...p, [key]: v }));
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -1362,7 +1370,7 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
       toast.error("New password and confirmation must match");
       return;
     }
-    toast.success("Password updated");
+    toast.success("Password updated successfully");
     setCurrentPassword("");
     setNewPassword("");
     setConfirmPassword("");
@@ -1372,12 +1380,22 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
   const showBackup = role === "superadmin";
   const showSystemSecurity = role === "superadmin";
 
+  const loginDevices = [
+    { device: "Chrome · Windows 11", location: "Makati City, PH", time: "Aug 10, 2026, 08:12 AM", status: "Active Session" },
+    { device: "HRMS Mobile App · Android", location: "Makati City, PH", time: "Aug 09, 2026, 06:45 PM", status: "Logged Out" },
+    { device: "Edge · Windows 10", location: "Makati City, PH", time: "Aug 05, 2026, 09:30 AM", status: "Logged Out" },
+  ];
+
   return (
     <div>
       <PageHeader
-        eyebrow={role === "superadmin" ? "Super Admin" : role === "admin" ? "Admin" : "Employee"}
+        eyebrow={role === "superadmin" ? "Super Admin" : role === "admin" ? "Admin" : "Employee Portal"}
         title="Settings"
-        description="Notifications, preferences and system data management."
+        description={
+          role === "employee"
+            ? "Manage notifications, personal preferences, account security, and contact details."
+            : "Notifications, preferences and system data management."
+        }
       />
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -1397,7 +1415,9 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
             </div>
             <div className="space-y-3">
               {(
-                ["Email notifications", "Browser notifications", "System announcements"] as const
+                role === "employee"
+                  ? ["Email notifications", "Browser notifications", "System announcements", "Payday & Request SMS alerts"]
+                  : ["Email notifications", "Browser notifications", "System announcements"]
               ).map((label) => (
                 <div
                   key={label}
@@ -1410,7 +1430,9 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                         ? "Digest and request updates sent to your inbox."
                         : label === "Browser notifications"
                           ? "Real-time pop-ups while you are signed in."
-                          : "Company-wide announcements from HR."}
+                          : label === "Payday & Request SMS alerts"
+                            ? "Mobile SMS alerts when payslips are released or requests approved."
+                            : "Company-wide announcements from HR."}
                     </p>
                   </div>
                   <Switch
@@ -1537,7 +1559,7 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
           </CardContent>
         </Card>
 
-        {/* Security */}
+        {/* Security & Password */}
         <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
           <CardContent className="flex flex-1 flex-col space-y-5 p-6">
             <div className="flex items-center gap-3">
@@ -1551,13 +1573,13 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                 <p className="text-xs text-muted-foreground">
                   {showSystemSecurity
                     ? "System-wide login security policy for all portals."
-                    : "Update your account password."}
+                    : "Update your account password and security options."}
                 </p>
               </div>
             </div>
 
             {!showSystemSecurity && (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2 sm:col-span-2">
                     <Label htmlFor="cur-pw">Current password</Label>
@@ -1590,11 +1612,48 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                     />
                   </div>
                 </div>
-                <div className="flex justify-end">
+                <div className="flex justify-between items-center pt-2">
+                  <div className="flex items-center gap-2">
+                    <Switch id="emp-2fa" checked={twoFactor} onCheckedChange={setTwoFactor} />
+                    <Label htmlFor="emp-2fa" className="text-xs text-muted-foreground font-normal">
+                      Enable 2FA login verification
+                    </Label>
+                  </div>
                   <Button onClick={changeOwnPassword}>
                     <KeyRound className="mr-2 h-4 w-4" /> Update password
                   </Button>
                 </div>
+
+                {role === "employee" && (
+                  <div className="border-t border-border/60 pt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      Recent Login Activity
+                    </p>
+                    <div className="space-y-2 text-xs">
+                      {loginDevices.map((dev, i) => (
+                        <div key={i} className="flex items-center justify-between border-b border-border/40 pb-1.5">
+                          <div>
+                            <span className="font-medium text-foreground">{dev.device}</span>
+                            <span className="text-muted-foreground ml-2">({dev.location})</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">{dev.time}</span>
+                            <Badge
+                              variant="outline"
+                              className={
+                                dev.status.includes("Active")
+                                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px]"
+                                  : "text-[10px]"
+                              }
+                            >
+                              {dev.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1672,8 +1731,8 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
           </CardContent>
         </Card>
 
-        {/* Company */}
-        {showCompany && (
+        {/* Employee Personal Profile & Contact Info (for employee role) OR Company Info (for admin roles) */}
+        {role === "employee" ? (
           <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
             <CardContent className="flex flex-1 flex-col space-y-5 p-6">
               <div className="flex items-center gap-3">
@@ -1681,78 +1740,184 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                   <Building2 className="h-5 w-5" />
                 </span>
                 <div>
-                  <h2 className="font-display text-xl font-semibold">Company</h2>
+                  <h2 className="font-display text-xl font-semibold">Personal Contact Details</h2>
                   <p className="text-xs text-muted-foreground">
-                    {role === "superadmin"
-                      ? "Details used across documents, job posts and portals."
-                      : "Read-only organization details managed by Super Admin."}
+                    Update your personal email, phone, and emergency contact details.
                   </p>
                 </div>
               </div>
-              <div className="grid flex-1 content-start gap-4 sm:grid-cols-2">
+
+              <div className="grid content-start gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="co-name">Company name</Label>
+                  <Label htmlFor="emp-email">Personal Email</Label>
                   <Input
-                    id="co-name"
-                    value={company.name}
-                    disabled={role !== "superadmin"}
-                    onChange={(e) => setCompany((c) => ({ ...c, name: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="co-email">Company email</Label>
-                  <Input
-                    id="co-email"
+                    id="emp-email"
                     type="email"
-                    value={company.email}
-                    disabled={role !== "superadmin"}
-                    onChange={(e) => setCompany((c) => ({ ...c, email: e.target.value }))}
+                    value={empProfile.email}
+                    onChange={(e) => setEmpProfile((p) => ({ ...p, email: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="co-contact">Contact number</Label>
+                  <Label htmlFor="emp-phone">Phone Number</Label>
                   <Input
-                    id="co-contact"
-                    value={company.contact}
-                    disabled={role !== "superadmin"}
-                    onChange={(e) => setCompany((c) => ({ ...c, contact: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="co-hours">Business hours</Label>
-                  <Input
-                    id="co-hours"
-                    value={company.hours}
-                    disabled={role !== "superadmin"}
-                    onChange={(e) => setCompany((c) => ({ ...c, hours: e.target.value }))}
+                    id="emp-phone"
+                    value={empProfile.phone}
+                    onChange={(e) => setEmpProfile((p) => ({ ...p, phone: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="co-address">Company address</Label>
+                  <Label htmlFor="emp-addr">Home Address</Label>
                   <Input
-                    id="co-address"
-                    value={company.address}
-                    disabled={role !== "superadmin"}
-                    onChange={(e) => setCompany((c) => ({ ...c, address: e.target.value }))}
+                    id="emp-addr"
+                    value={empProfile.address}
+                    onChange={(e) => setEmpProfile((p) => ({ ...p, address: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="emp-emg">Emergency Contact</Label>
+                  <Input
+                    id="emp-emg"
+                    value={empProfile.emergencyContact}
+                    onChange={(e) => setEmpProfile((p) => ({ ...p, emergencyContact: e.target.value }))}
                   />
                 </div>
               </div>
-              {role === "superadmin" ? (
-                <div className="mt-auto flex justify-end border-t border-border/60 pt-4">
-                  <Button onClick={() => toast.success("Company information saved")}>
-                    Save company info
-                  </Button>
+
+              <div className="mt-auto flex justify-end border-t border-border/60 pt-4">
+                <Button onClick={() => toast.success("Personal contact information saved")}>
+                  Save contact info
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          showCompany && (
+            <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
+              <CardContent className="flex flex-1 flex-col space-y-5 p-6">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <Building2 className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className="font-display text-xl font-semibold">Company</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {role === "superadmin"
+                        ? "Details used across documents, job posts and portals."
+                        : "Read-only organization details managed by Super Admin."}
+                    </p>
+                  </div>
                 </div>
-              ) : (
-                <p className="mt-auto border-t border-border/60 pt-4 text-xs text-muted-foreground">
-                  Contact a Super Admin to update company-wide information.
-                </p>
-              )}
+                <div className="grid flex-1 content-start gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="co-name">Company name</Label>
+                    <Input
+                      id="co-name"
+                      value={company.name}
+                      disabled={role !== "superadmin"}
+                      onChange={(e) => setCompany((c) => ({ ...c, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="co-email">Company email</Label>
+                    <Input
+                      id="co-email"
+                      type="email"
+                      value={company.email}
+                      disabled={role !== "superadmin"}
+                      onChange={(e) => setCompany((c) => ({ ...c, email: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="co-contact">Contact number</Label>
+                    <Input
+                      id="co-contact"
+                      value={company.contact}
+                      disabled={role !== "superadmin"}
+                      onChange={(e) => setCompany((c) => ({ ...c, contact: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="co-hours">Business hours</Label>
+                    <Input
+                      id="co-hours"
+                      value={company.hours}
+                      disabled={role !== "superadmin"}
+                      onChange={(e) => setCompany((c) => ({ ...c, hours: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="co-address">Company address</Label>
+                    <Input
+                      id="co-address"
+                      value={company.address}
+                      disabled={role !== "superadmin"}
+                      onChange={(e) => setCompany((c) => ({ ...c, address: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                {role === "superadmin" ? (
+                  <div className="mt-auto flex justify-end border-t border-border/60 pt-4">
+                    <Button onClick={() => toast.success("Company information saved")}>
+                      Save company info
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="mt-auto border-t border-border/60 pt-4 text-xs text-muted-foreground">
+                    Contact a Super Admin to update company-wide information.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )
+        )}
+
+        {/* Company & Branch Information Card (for Employee Role) */}
+        {role === "employee" && (
+          <Card className="flex h-full flex-col rounded-xl border-border/70 shadow-sm">
+            <CardContent className="flex flex-1 flex-col space-y-5 p-6">
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <Building2 className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 className="font-display text-xl font-semibold">Company &amp; Work Information</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Read-only reference regarding your workplace, department, and supervisor.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid content-start gap-4 sm:grid-cols-2 text-sm">
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Company &amp; Branch</span>
+                  <p className="font-medium text-foreground">Oxford Suites Makati</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Department</span>
+                  <p className="font-medium text-foreground">{myProfile.department}</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Current Position</span>
+                  <p className="font-medium text-foreground">{myProfile.position} ({myProfile.employmentType})</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Immediate Supervisor</span>
+                  <p className="font-medium text-foreground">{myProfile.supervisor}</p>
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <span className="text-xs text-muted-foreground">HR Administration Email</span>
+                  <p className="font-medium text-foreground">hr.makati@oxfordsuites.com.ph</p>
+                </div>
+              </div>
+
+              <p className="mt-auto border-t border-border/60 pt-4 text-xs text-muted-foreground">
+                To update your department or supervisor assignment, contact HR Administration.
+              </p>
             </CardContent>
           </Card>
         )}
 
-        {/* Backup & Restore */}
+        {/* Backup & Restore (Superadmin only) */}
         {showBackup && (
           <Card className="rounded-xl border-border/70 shadow-sm lg:col-span-2">
             <CardContent className="flex flex-1 flex-col space-y-4 p-6">
@@ -1796,6 +1961,7 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="hourly">Hourly</SelectItem>
                         <SelectItem value="daily">Daily</SelectItem>
                         <SelectItem value="weekly">Weekly</SelectItem>
                         <SelectItem value="monthly">Monthly</SelectItem>
@@ -1803,71 +1969,50 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                     </Select>
                   )}
                   <Switch
-                    checked={autoBackupEnabled}
-                    onCheckedChange={setAutoBackupEnabled}
                     aria-label="Automatic backups"
+                    checked={autoBackupEnabled}
+                    onCheckedChange={(v) => {
+                      setAutoBackupEnabled(v);
+                      toast.success(`Automatic backups ${v ? "enabled" : "disabled"}`);
+                    }}
                   />
                 </div>
               </div>
 
-              <div className="max-h-[18rem] overflow-auto rounded-lg border border-border/70">
+              <div className="rounded-lg border border-border/70 p-4">
+                <p className="mb-3 text-sm font-medium">Backup history</p>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Backup</TableHead>
-                      <TableHead>Timestamp</TableHead>
+                      <TableHead>Backup ID</TableHead>
+                      <TableHead>Created</TableHead>
                       <TableHead>Size</TableHead>
                       <TableHead>Type</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {backupsPage.pageItems.map((b) => (
                       <TableRow key={b.id}>
-                        <TableCell className="text-sm font-medium">{b.id}</TableCell>
-                        <TableCell className="text-xs">{b.timestamp}</TableCell>
+                        <TableCell className="font-mono text-xs">{b.id}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {b.timestamp}
+                        </TableCell>
                         <TableCell className="text-xs">{b.size}</TableCell>
-                        <TableCell className="text-xs">{b.type}</TableCell>
                         <TableCell>
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              title="Download backup"
-                              onClick={() => toast.success(`Downloading ${b.id}`)}
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                            <AlertDialog
-                              open={restoreTarget?.id === b.id}
-                              onOpenChange={(o) => !o && setRestoreTarget(null)}
-                            >
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setRestoreTarget(b)}
-                                >
-                                  Restore
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Restore from {b.id}?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This will roll back system data to the {b.timestamp} snapshot.
-                                    Any changes made after this backup will be lost.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={restoreBackup}>
-                                    Restore
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
+                          <Badge variant={b.type === "Automatic" ? "outline" : "secondary"}>
+                            {b.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-xs"
+                            onClick={() => setRestoreTarget(b)}
+                          >
+                            <RotateCcw className="mr-1 h-3.5 w-3.5" /> Restore
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
