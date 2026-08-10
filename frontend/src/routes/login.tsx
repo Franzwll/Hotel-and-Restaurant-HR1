@@ -1,4 +1,15 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import {
+  ConciergeBell,
+  Eye,
+  EyeOff,
+  HelpCircle,
+  Lock,
+  Mail,
+  ShieldCheck,
+  UserCog,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ConciergeBell, Eye, EyeOff, Lock, Mail, ShieldCheck, UserCog } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +27,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
+import { systemUsers } from "@/data/users";
+import { newHires } from "@/data/hr";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -87,6 +100,26 @@ const slides = [
   { src: slide6, alt: "Deluxe twin room with work desk", pan: "kb-c" },
 ];
 
+import loginLobby from "@/assets/login-lobby.png";
+import loginDining from "@/assets/login-dining.jpg";
+
+const montageImages = [
+  {
+    src: loginLobby,
+    alt: "Oxford Suites Makati grand circular lobby with ceiling light, sunburst marble floor and dark wood front desk",
+    animation: "animate-[kenburns-1_20s_infinite_alternate_ease-in-out]",
+  },
+  {
+    src: loginDining,
+    alt: "Oxford Suites Makati luxury fine dining restaurant at dusk with crystal chandeliers",
+    animation: "animate-[kenburns-2_20s_infinite_alternate_ease-in-out]",
+  },
+  {
+    src: loginHero,
+    alt: "Oxford Suites Makati hospitality floor view",
+    animation: "animate-[kenburns-3_20s_infinite_alternate_ease-in-out]",
+  },
+];
 const SLIDE_MS = 6500;
 
 /** Advances the hero slideshow once the first frame has decoded. */
@@ -135,6 +168,15 @@ function LoginPage() {
   const [error, setError] = useState("");
   const role = roles.find((r) => r.id === roleId)!;
   const [email, setEmail] = useState(role.email);
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  // Montage slideshow transition
+  useEffect(() => {
+    const slideTimer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % montageImages.length);
+    }, 6000);
+    return () => clearInterval(slideTimer);
+  }, []);
   const { index, setIndex, ready } = useHeroSlideshow();
   const reveal = useMemo(
     () => (step: number) => ({
@@ -152,6 +194,68 @@ function LoginPage() {
 
 
   return (
+    <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
+      {/* Property panel with omni-directional slow-motion montage edit */}
+      <div className="relative hidden flex-col justify-between overflow-hidden px-12 py-10 text-primary-foreground lg:flex">
+        {/* Montage Slideshow Container */}
+        <div className="absolute inset-0 z-0 overflow-hidden">
+          {montageImages.map((img, index) => (
+            <img
+              key={img.src}
+              src={img.src}
+              alt={img.alt}
+              className={cn(
+                "absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ease-in-out scale-110",
+                index === currentSlide ? "opacity-100" : "opacity-0",
+                img.animation
+              )}
+            />
+          ))}
+        </div>
+
+        {/* Lightened Maroon Foreshadow Background Overlay */}
+        <div className="absolute inset-0 z-10 bg-primary/45 mix-blend-multiply transition-colors duration-700" />
+        <div className="absolute inset-0 z-10 bg-gradient-to-t from-foreground/80 via-foreground/25 to-foreground/45" />
+
+        <div className="relative z-20 flex items-center justify-between">
+          <Link to="/" className="flex items-center gap-3">
+            <Logo tone="invert" />
+          </Link>
+          <span className="rounded-full border border-primary-foreground/30 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-primary-foreground/90 backdrop-blur-sm bg-black/20">
+            Est. 1995
+          </span>
+        </div>
+
+        <div className="relative z-20 max-w-lg">
+          <p className="eyebrow text-gold drop-shadow-md">Hotel &amp; Restaurant Human Resource System</p>
+          <div className="mt-4 h-px w-16 bg-gold/70" />
+          <h1 className="mt-6 font-display text-5xl font-semibold leading-[1.08] drop-shadow-lg">
+            The house is ready.
+            <br />
+            Welcome back to duty.
+          </h1>
+          <p className="mt-5 text-sm leading-relaxed text-primary-foreground/90 drop-shadow">
+            One portal for the entire property — from the front desk and housekeeping floors to the
+            kitchen brigade and banquet service. Hiring, 201 files, schedules and employee
+            self-service, kept in a single register.
+          </p>
+
+          <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-2 text-xs text-primary-foreground/90">
+            {brigades.map((b) => (
+              <span key={b} className="flex items-center gap-2 drop-shadow-sm">
+                <span className="h-1.5 w-1.5 rounded-full bg-gold shadow-[0_0_6px_rgba(212,175,55,0.8)]" />
+                {b}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative z-20 flex items-center justify-between border-t border-primary-foreground/20 pt-5 text-xs text-primary-foreground/80">
+          <span className="flex items-center gap-2">
+            <ShieldCheck className="h-3.5 w-3.5 text-gold" />
+            Role-based access · Audited sessions
+          </span>
+          <span>24-hour front desk · +63 2 8888 8888</span>
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,30rem)] xl:grid-cols-[minmax(0,1.1fr)_minmax(27rem,34rem)]">
       {/* Property panel */}
       <div
@@ -345,6 +449,21 @@ function LoginPage() {
               e.preventDefault();
               if (!email.includes("@")) return setError("Enter a valid work email address.");
               if (password.length < 6) return setError("Password must be at least 6 characters.");
+
+              // Check pre-onboarding attempt
+              const preOnboardingHire = newHires.find(
+                (nh) => nh.email.toLowerCase() === email.toLowerCase() && nh.stage === "Pre-onboarding"
+              );
+              if (preOnboardingHire) {
+                return setError("Account not created yet. Pre-onboarded candidates receive ESS access upon entering Probationary status.");
+              }
+
+              // Check deactivated account
+              const matchingUser = systemUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
+              if (matchingUser && matchingUser.status === "Disabled") {
+                return setError("Account deactivated due to employee exit/separation status. Please contact HR for assistance.");
+              }
+
               setError("");
               toast.success(`Welcome back — signed in as ${role.label}`);
               navigate({ to: "/otp", search: { role: role.to } });

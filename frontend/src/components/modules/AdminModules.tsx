@@ -16,6 +16,7 @@ import {
   Smartphone,
   Trash2,
   UserPlus,
+  Users,
 } from "lucide-react";
 
 import { toast } from "sonner";
@@ -36,7 +37,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -190,6 +191,9 @@ export function UserManagement() {
 
   const [resetUser, setResetUser] = useState<SystemUser | null>(null);
   const [resetPassword, setResetPassword] = useState("");
+  const [confirmResetPassword, setConfirmResetPassword] = useState("");
+  const [pendingConfirmReset, setPendingConfirmReset] = useState(false);
+  const [pendingUnsavedResetExit, setPendingUnsavedResetExit] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newUser, setNewUser] = useState({
@@ -242,13 +246,24 @@ export function UserManagement() {
   const openReset = (u: SystemUser) => {
     setResetUser(u);
     setResetPassword("");
+    setConfirmResetPassword("");
   };
   const submitReset = () => {
     if (!resetUser) return;
+    if (!resetPassword) {
+      toast.error("Please enter a new password.");
+      return;
+    }
+    if (resetPassword !== confirmResetPassword) {
+      toast.error("Passwords do not match. Please re-enter for verification.");
+      return;
+    }
     toast.success(`Password reset for ${resetUser.username}`, {
-      description: resetPassword ? "New password saved." : "No password set.",
+      description: "New password saved and user verified.",
     });
     setResetUser(null);
+    setResetPassword("");
+    setConfirmResetPassword("");
   };
 
   const createUser = () => {
@@ -326,170 +341,193 @@ export function UserManagement() {
       </div>
 
       <Tabs defaultValue="users" className="mt-6">
-        <TabsList className="flex h-auto flex-wrap justify-start">
-          <TabsTrigger value="users">User List</TabsTrigger>
-          <TabsTrigger value="matrix">Permission Matrix</TabsTrigger>
-          <TabsTrigger value="auth">Authentication & Login Security</TabsTrigger>
+        <TabsList className="inline-flex h-11 items-center justify-start rounded-xl bg-muted/80 p-1 text-muted-foreground w-fit border border-border/70 shadow-2xs">
+          <TabsTrigger
+            value="users"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <Users className="h-4 w-4 text-primary" /> User List
+          </TabsTrigger>
+          <TabsTrigger
+            value="matrix"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <Shield className="h-4 w-4 text-primary" /> Permission Matrix
+          </TabsTrigger>
+          <TabsTrigger
+            value="auth"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
+          >
+            <KeyRound className="h-4 w-4 text-primary" /> Authentication &amp; Login Security
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="mt-4">
-          <Card className="border-border/70">
-            <CardContent className="p-6">
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader className="border-b border-border/50 pb-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="font-display text-2xl font-semibold">System Users</h2>
-                <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm">
-                      <UserPlus className="mr-2 h-4 w-4" /> Create user
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle className="font-display text-2xl">
-                        Create User Account
-                      </DialogTitle>
-                    </DialogHeader>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Full name</Label>
-                        <Input
-                          value={newUser.name}
-                          onChange={(e) => setNewUser((p) => ({ ...p, name: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Username</Label>
-                        <Input
-                          value={newUser.username}
-                          onChange={(e) => setNewUser((p) => ({ ...p, username: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Email</Label>
-                        <Input
-                          type="email"
-                          value={newUser.email}
-                          onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Phone number</Label>
-                        <Input
-                          value={newUser.phone}
-                          onChange={(e) => setNewUser((p) => ({ ...p, phone: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Role</Label>
-                        <Select
-                          value={newUser.role}
-                          onValueChange={(v) =>
-                            setNewUser((p) => ({
-                              ...p,
-                              role: v,
-                              department: v === "Super Admin" ? "" : p.department,
-                            }))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select role" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {["Super Admin", "Admin", "Employee"].map((r) => (
-                              <SelectItem key={r} value={r}>
-                                {roleLabels[r as SystemUser["role"]]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {newUser.role !== "Super Admin" && (
+                <div>
+                  <CardTitle className="font-display text-xl font-semibold">System Users</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {filteredUsers.length} user account{filteredUsers.length !== 1 ? "s" : ""} registered
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative min-w-[14rem]">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      className="h-9 pl-8 text-xs bg-card shadow-2xs"
+                      placeholder="Search users…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </div>
+                  <Select value={roleFilter} onValueChange={setRoleFilter}>
+                    <SelectTrigger className="h-9 w-40 text-xs bg-card shadow-2xs">
+                      <SelectValue placeholder="Role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All roles</SelectItem>
+                      {["Super Admin", "Admin", "Employee"].map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {roleLabels[r as SystemUser["role"]]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-9 w-36 text-xs bg-card shadow-2xs">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      {["Active", "Suspended", "Disabled"].map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm">
+                        <UserPlus className="mr-2 h-4 w-4" /> Create user
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle className="font-display text-2xl">
+                          Create User Account
+                        </DialogTitle>
+                      </DialogHeader>
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <div className="space-y-2">
-                          <Label>Department</Label>
+                          <Label>Full name</Label>
+                          <Input
+                            value={newUser.name}
+                            onChange={(e) => setNewUser((p) => ({ ...p, name: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Username</Label>
+                          <Input
+                            value={newUser.username}
+                            onChange={(e) => setNewUser((p) => ({ ...p, username: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Email</Label>
+                          <Input
+                            type="email"
+                            value={newUser.email}
+                            onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Phone number</Label>
+                          <Input
+                            value={newUser.phone}
+                            onChange={(e) => setNewUser((p) => ({ ...p, phone: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Role</Label>
                           <Select
-                            value={newUser.department}
-                            onValueChange={(v) => setNewUser((p) => ({ ...p, department: v }))}
+                            value={newUser.role}
+                            onValueChange={(v) =>
+                              setNewUser((p) => ({
+                                ...p,
+                                role: v,
+                                department: v === "Super Admin" ? "" : p.department,
+                              }))
+                            }
                           >
                             <SelectTrigger>
-                              <SelectValue placeholder="Select" />
+                              <SelectValue placeholder="Select role" />
                             </SelectTrigger>
                             <SelectContent>
-                              {departments.map((d) => (
-                                <SelectItem key={d.code} value={d.name}>
-                                  {d.name}
+                              {["Super Admin", "Admin", "Employee"].map((r) => (
+                                <SelectItem key={r} value={r}>
+                                  {roleLabels[r as SystemUser["role"]]}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
-                      )}
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label>Password</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            type="text"
-                            value={newUser.password}
-                            onChange={(e) =>
-                              setNewUser((p) => ({ ...p, password: e.target.value }))
-                            }
-                            placeholder="Enter password"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() =>
-                              setNewUser((p) => ({ ...p, password: DEFAULT_PASSWORD }))
-                            }
-                          >
-                            Use default password
-                          </Button>
+                        {newUser.role !== "Super Admin" && (
+                          <div className="space-y-2">
+                            <Label>Department</Label>
+                            <Select
+                              value={newUser.department}
+                              onValueChange={(v) => setNewUser((p) => ({ ...p, department: v }))}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {departments.map((d) => (
+                                  <SelectItem key={d.code} value={d.name}>
+                                    {d.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        <div className="space-y-2 sm:col-span-2">
+                          <Label>Password</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              type="text"
+                              value={newUser.password}
+                              onChange={(e) =>
+                                setNewUser((p) => ({ ...p, password: e.target.value }))
+                              }
+                              placeholder="Enter password"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() =>
+                                setNewUser((p) => ({ ...p, password: DEFAULT_PASSWORD }))
+                              }
+                            >
+                              Use default password
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <DialogFooter>
-                      <Button onClick={createUser}>Create user</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <div className="relative w-full sm:w-64">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    className="pl-8"
-                    placeholder="Search users…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
+                      <DialogFooter>
+                        <Button onClick={createUser}>Create user</Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
-                <Select value={roleFilter} onValueChange={setRoleFilter}>
-                  <SelectTrigger className="w-44">
-                    <SelectValue placeholder="Role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All roles</SelectItem>
-                    {["Super Admin", "Admin", "Employee"].map((r) => (
-                      <SelectItem key={r} value={r}>
-                        {roleLabels[r as SystemUser["role"]]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-44">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    {["Active", "Suspended", "Disabled"].map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
+            </CardHeader>
+            <CardContent className="p-6 pt-4">
 
               <div className="mt-4 overflow-x-auto">
                 <ListBody>
@@ -1012,46 +1050,157 @@ export function UserManagement() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!resetUser} onOpenChange={(o) => !o && setResetUser(null)}>
+      <Dialog
+        open={!!resetUser}
+        onOpenChange={(o) => {
+          if (!o && (resetPassword || confirmResetPassword)) {
+            setPendingUnsavedResetExit(true);
+          } else {
+            setResetUser(null);
+            setResetPassword("");
+            setConfirmResetPassword("");
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Reset Password</DialogTitle>
+            <DialogTitle className="font-display text-2xl">Reset User Password</DialogTitle>
           </DialogHeader>
           {resetUser && (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Set a new password for{" "}
-                <span className="font-medium text-foreground">{resetUser.username}</span>.
+            <div className="space-y-4 py-2">
+              <p className="text-xs text-muted-foreground">
+                Specify a new password for account <strong className="text-foreground">{resetUser.username}</strong> ({resetUser.name}).
               </p>
-              <div className="space-y-2">
-                <Label>New password</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs">New Password</Label>
                 <div className="flex gap-2">
                   <Input
+                    type="password"
                     value={resetPassword}
                     onChange={(e) => setResetPassword(e.target.value)}
                     placeholder="Enter new password"
+                    className="text-xs"
                   />
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setResetPassword(generateDefaultPassword())}
+                    className="text-xs shrink-0"
+                    onClick={() => {
+                      const gen = generateDefaultPassword();
+                      setResetPassword(gen);
+                      setConfirmResetPassword(gen);
+                    }}
                   >
-                    Generate default password
+                    Generate Default
                   </Button>
                 </div>
               </div>
-              {resetPassword && (
-                <p className="rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
-                  {resetPassword}
+
+              {/* RE-ENTER NEW PASSWORD FOR VERIFICATION */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Re-enter New Password (Verification)</Label>
+                <Input
+                  type="password"
+                  value={confirmResetPassword}
+                  onChange={(e) => setConfirmResetPassword(e.target.value)}
+                  placeholder="Re-enter new password to confirm"
+                  className="text-xs"
+                />
+              </div>
+
+              {resetPassword && confirmResetPassword && resetPassword !== confirmResetPassword && (
+                <p className="text-xs text-destructive font-medium">
+                  Passwords do not match. Please ensure both fields match exactly.
+                </p>
+              )}
+
+              {resetPassword && confirmResetPassword && resetPassword === confirmResetPassword && (
+                <p className="text-xs text-success font-medium flex items-center gap-1.5">
+                  Passwords match successfully!
                 </p>
               )}
             </div>
           )}
           <DialogFooter>
-            <Button onClick={submitReset}>Reset password</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (resetPassword || confirmResetPassword) {
+                  setPendingUnsavedResetExit(true);
+                } else {
+                  setResetUser(null);
+                }
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!resetPassword) {
+                  toast.error("Please enter a new password.");
+                  return;
+                }
+                if (resetPassword !== confirmResetPassword) {
+                  toast.error("Passwords do not match. Please verify.");
+                  return;
+                }
+                setPendingConfirmReset(true);
+              }}
+            >
+              Reset Password
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* CONFIRM RESET PASSWORD SAVE */}
+      <AlertDialog open={pendingConfirmReset} onOpenChange={setPendingConfirmReset}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Password Reset</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to update the password for user <strong>{resetUser?.username}</strong>?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingConfirmReset(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                submitReset();
+                setPendingConfirmReset(false);
+              }}
+            >
+              Yes, Reset Password
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* CONFIRM UNSAVED EXIT */}
+      <AlertDialog open={pendingUnsavedResetExit} onOpenChange={setPendingUnsavedResetExit}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-amber-600">Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unconfirmed password entries. Are you sure you want to exit without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingUnsavedResetExit(false)}>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                setResetUser(null);
+                setResetPassword("");
+                setConfirmResetPassword("");
+                setPendingUnsavedResetExit(false);
+              }}
+            >
+              Discard &amp; Exit
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1211,22 +1360,17 @@ export function AuditLogs() {
                     Timestamp
                   </SortHead>
                   <SortHead sortKey="user" sort={sort} onSort={toggle}>
-                    User
+                    User &amp; Role
                   </SortHead>
-                  <SortHead sortKey="role" sort={sort} onSort={toggle}>
-                    Role
-                  </SortHead>
+                  <TableHead>Action Type</TableHead>
                   <SortHead sortKey="action" sort={sort} onSort={toggle}>
-                    Action
+                    Action Details
                   </SortHead>
                   <SortHead sortKey="module" sort={sort} onSort={toggle}>
                     Module
                   </SortHead>
                   <SortHead sortKey="device" sort={sort} onSort={toggle}>
-                    Device
-                  </SortHead>
-                  <SortHead sortKey="ipAddress" sort={sort} onSort={toggle}>
-                    IP
+                    Device &amp; IP
                   </SortHead>
                   <SortHead sortKey="severity" sort={sort} onSort={toggle}>
                     Severity
@@ -1234,35 +1378,69 @@ export function AuditLogs() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {auditPage.pageItems.map((a) => (
-                  <TableRow key={a.id}>
-                    <TableCell className="text-xs">{a.timestamp}</TableCell>
-                    <TableCell className="text-xs">{a.user}</TableCell>
-                    <TableCell className="text-xs">{a.role}</TableCell>
-                    <TableCell className="text-sm">{a.action}</TableCell>
-                    <TableCell className="text-xs">{a.module}</TableCell>
-                    <TableCell className="text-xs">{a.device}</TableCell>
-                    <TableCell className="font-mono text-xs">{a.ipAddress}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={
-                          a.severity === "Critical"
-                            ? "border-destructive/30 bg-destructive/15 text-destructive"
-                            : a.severity === "Warning"
-                              ? "border-warning/40 bg-warning/20 text-warning-foreground"
-                              : "border-border"
-                        }
-                      >
-                        {a.severity}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {auditPage.pageItems.map((a) => {
+                  const actLower = a.action.toLowerCase();
+                  const actionType: "Create" | "Update" | "Delete" | "Security" =
+                    actLower.includes("create") || actLower.includes("add") || actLower.includes("generate") || actLower.includes("regularized")
+                      ? "Create"
+                      : actLower.includes("delete") || actLower.includes("revoke") || actLower.includes("disable") || actLower.includes("exit") || actLower.includes("deactivated")
+                      ? "Delete"
+                      : actLower.includes("login") || actLower.includes("password") || actLower.includes("2fa") || actLower.includes("permission") || actLower.includes("policy") || actLower.includes("security")
+                      ? "Security"
+                      : "Update";
+
+                  const actionTypeTone =
+                    actionType === "Create"
+                      ? "border-success/40 bg-success/10 text-success"
+                      : actionType === "Delete"
+                      ? "border-destructive/40 bg-destructive/10 text-destructive"
+                      : actionType === "Security"
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-600"
+                      : "border-primary/40 bg-primary/10 text-primary";
+
+                  return (
+                    <TableRow key={a.id}>
+                      <TableCell className="text-xs text-muted-foreground">{a.timestamp}</TableCell>
+                      {/* USER & ROLE COLUMN */}
+                      <TableCell className="text-xs">
+                        <div className="font-semibold text-foreground">{a.user}</div>
+                        <Badge variant="outline" className="mt-0.5 text-[10px] py-0 h-4 border-border/60 text-muted-foreground font-normal">
+                          {a.role}
+                        </Badge>
+                      </TableCell>
+                      {/* ACTION TYPE CATEGORY COLUMN */}
+                      <TableCell>
+                        <Badge variant="outline" className={cn("text-[10px] font-semibold", actionTypeTone)}>
+                          {actionType}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs font-medium max-w-sm">{a.action}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{a.module}</TableCell>
+                      <TableCell className="text-xs">
+                        <div>{a.device}</div>
+                        <div className="font-mono text-[11px] text-muted-foreground">{a.ipAddress}</div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            a.severity === "Critical"
+                              ? "border-destructive/30 bg-destructive/15 text-destructive text-[10px]"
+                              : a.severity === "Warning"
+                              ? "border-warning/40 bg-warning/20 text-warning-foreground text-[10px]"
+                              : "border-border text-muted-foreground text-[10px]"
+                          }
+                        >
+                          {a.severity}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
                 {rows.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={7}
                       className="py-8 text-center text-sm text-muted-foreground"
                     >
                       No activity matches your filters.
@@ -1459,14 +1637,357 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
 
   const isSuperAdmin = role === "superadmin";
 
+  const [activeTab, setActiveTab] = useState<"notifications" | "security" | "company" | "preferences" | "backup">("security");
+
+  const settingsTabs = [
+    { id: "security" as const, label: "Login & Security", icon: Shield, desc: "Passwords, 2FA & lockout policy" },
+    { id: "notifications" as const, label: "Notifications", icon: Bell, desc: "Email, browser & SMS alert settings" },
+    { id: "preferences" as const, label: "Preferences", icon: SlidersHorizontal, desc: "Theme, date formats & language" },
+    ...(showCompany ? [{ id: "company" as const, label: "Company", icon: Building2, desc: "Property & organization profile" }] : []),
+    ...(showBackup ? [{ id: "backup" as const, label: "Backup & Restore", icon: Database, desc: "Database snapshots & restore points" }] : []),
+  ];
+
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
         eyebrow={role === "superadmin" ? "Super Admin" : role === "admin" ? "Admin" : "Employee"}
-        title="Settings"
-        description="Notifications, preferences and system data management."
+        title="System & Account Settings"
+        description="Configure account preferences, notification channels, security policies, and system data backups."
       />
 
+      {/* REVAMPED 2-COLUMN LAYOUT: LEFT TAB NAVIGATION, RIGHT FUNCTION PANEL */}
+      <div className="grid gap-6 lg:grid-cols-[280px_1fr] items-start">
+        {/* LEFT COLUMN: DEDICATED TAB NAVIGATION */}
+        <Card className="border-border/70 shadow-sm overflow-hidden sticky top-6">
+          <CardContent className="p-2 space-y-1">
+            <p className="px-3 pt-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Settings Category
+            </p>
+            {settingsTabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors",
+                    isActive
+                      ? "bg-primary/10 text-primary font-medium shadow-2xs border border-primary/20"
+                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                  )}
+                >
+                  <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-md text-xs", isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold leading-tight">{tab.label}</p>
+                    <p className="text-[11px] text-muted-foreground truncate mt-0.5">{tab.desc}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </CardContent>
+        </Card>
+
+        {/* RIGHT COLUMN: ACTIVE SETTINGS CONTROLS */}
+        <div className="space-y-6">
+          {/* 1. NOTIFICATIONS */}
+          {activeTab === "notifications" && (
+            <Card className="rounded-xl border-border/70 shadow-sm">
+              <CardContent className="space-y-5 p-6">
+                <div className="flex items-center gap-3 border-b border-border/50 pb-4">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <Bell className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className="font-display text-xl font-semibold">Notification Settings</h2>
+                    <p className="text-xs text-muted-foreground">Configure email digest alerts, browser push notifications, and HR announcements.</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {(["Email notifications", "Browser notifications", "System announcements"] as const).map((label) => (
+                    <div key={label} className="flex items-center justify-between gap-4 rounded-lg border border-border/70 bg-muted/30 p-4">
+                      <div className="min-w-0">
+                        <span className="text-sm font-medium">{label}</span>
+                        <p className="text-xs text-muted-foreground">
+                          {label === "Email notifications"
+                            ? "Digest and request updates sent to your inbox."
+                            : label === "Browser notifications"
+                            ? "Real-time pop-ups while signed in."
+                            : "Property-wide announcements from HR."}
+                        </p>
+                      </div>
+                      <Switch
+                        aria-label={label}
+                        checked={notify[label] ?? false}
+                        onCheckedChange={(v) => {
+                          setNotify((prev) => ({ ...prev, [label]: v }));
+                          toast.success(`${label} ${v ? "enabled" : "disabled"}`);
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end border-t border-border/60 pt-4">
+                  <Button onClick={() => toast.success("Notification settings saved")}>Save Notification Settings</Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 2. LOGIN & SECURITY */}
+          {activeTab === "security" && (
+            <Card className="rounded-xl border-border/70 shadow-sm">
+              <CardContent className="space-y-5 p-6">
+                <div className="flex items-center gap-3 border-b border-border/50 pb-4">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <Shield className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className="font-display text-xl font-semibold">{showSystemSecurity ? "Login Security Policy" : "Account Security"}</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {showSystemSecurity ? "System-wide login security policy for all employee and admin portals." : "Update your personal account password."}
+                    </p>
+                  </div>
+                </div>
+
+                {!showSystemSecurity && (
+                  <div className="space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="cur-pw">Current password</Label>
+                        <Input id="cur-pw" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="••••••••" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="new-pw">New password</Label>
+                        <Input id="new-pw" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="••••••••" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="confirm-pw">Confirm new password</Label>
+                        <Input id="confirm-pw" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" />
+                      </div>
+                    </div>
+                    <div className="flex justify-end border-t border-border/60 pt-4">
+                      <Button onClick={changeOwnPassword}>
+                        <KeyRound className="mr-2 h-4 w-4" /> Update Password
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {showSystemSecurity && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-4 rounded-lg border border-border/70 bg-muted/30 p-4">
+                      <div>
+                        <p className="text-sm font-medium">Two-Factor Authentication (OTP)</p>
+                        <p className="text-xs text-muted-foreground">Require a 6-digit OTP code for all admin portal logins.</p>
+                      </div>
+                      <Switch checked={twoFactor} onCheckedChange={setTwoFactor} />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Password Strength Policy</Label>
+                        <Select value={passwordPolicy} onValueChange={setPasswordPolicy}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="basic">Basic (min 6 characters)</SelectItem>
+                            <SelectItem value="strong">Strong (upper, lower, number, symbol)</SelectItem>
+                            <SelectItem value="strict">Strict (12+ chars, mandatory periodic reset)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Inactivity Session Timeout</Label>
+                        <Select value={sessionTimeout} onValueChange={setSessionTimeout}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {["15", "30", "60", "120"].map((v) => (
+                              <SelectItem key={v} value={v}>{v} minutes</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label>Max Failed Attempts Before Lockout</Label>
+                        <Select value={maxAttempts} onValueChange={setMaxAttempts}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {["3", "5", "10"].map((v) => (
+                              <SelectItem key={v} value={v}>{v} attempts</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="flex justify-end border-t border-border/60 pt-4">
+                      <Button onClick={() => toast.success("System-wide login security policy saved")}>Save Login Security Policy</Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 3. COMPANY */}
+          {activeTab === "company" && showCompany && (
+            <Card className="rounded-xl border-border/70 shadow-sm">
+              <CardContent className="space-y-5 p-6">
+                <div className="flex items-center gap-3 border-b border-border/50 pb-4">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <Building2 className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className="font-display text-xl font-semibold">Company Profile</h2>
+                    <p className="text-xs text-muted-foreground">Property profile details used across job postings, COE documents, and reports.</p>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="co-name">Company Name</Label>
+                    <Input id="co-name" value={company.name} disabled={role !== "superadmin"} onChange={(e) => setCompany((c) => ({ ...c, name: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="co-email">Official HR Email</Label>
+                    <Input id="co-email" type="email" value={company.email} disabled={role !== "superadmin"} onChange={(e) => setCompany((c) => ({ ...c, email: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="co-contact">Property Contact Line</Label>
+                    <Input id="co-contact" value={company.contact} disabled={role !== "superadmin"} onChange={(e) => setCompany((c) => ({ ...c, contact: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="co-hours">Business Hours</Label>
+                    <Input id="co-hours" value={company.hours} disabled={role !== "superadmin"} onChange={(e) => setCompany((c) => ({ ...c, hours: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="co-address">Property Address</Label>
+                    <Input id="co-address" value={company.address} disabled={role !== "superadmin"} onChange={(e) => setCompany((c) => ({ ...c, address: e.target.value }))} />
+                  </div>
+                </div>
+                {role === "superadmin" ? (
+                  <div className="flex justify-end border-t border-border/60 pt-4">
+                    <Button onClick={() => toast.success("Company information saved")}>Save Company Info</Button>
+                  </div>
+                ) : (
+                  <p className="border-t border-border/60 pt-4 text-xs text-muted-foreground">Read-only view. Contact Super Admin to update company information.</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 4. PREFERENCES */}
+          {activeTab === "preferences" && (
+            <Card className="rounded-xl border-border/70 shadow-sm">
+              <CardContent className="space-y-5 p-6">
+                <div className="flex items-center gap-3 border-b border-border/50 pb-4">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <SlidersHorizontal className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className="font-display text-xl font-semibold">System Preferences</h2>
+                    <p className="text-xs text-muted-foreground">Personalize interface theme mode, date/time formatting, and regional language.</p>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <Palette className="h-3.5 w-3.5 text-muted-foreground" /> Theme Mode
+                    </Label>
+                    <Select value={prefs.theme} onValueChange={setPref("theme")}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="light">Light Mode</SelectItem>
+                        <SelectItem value="dark">Dark Mode</SelectItem>
+                        <SelectItem value="system">System Default</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <Globe className="h-3.5 w-3.5 text-muted-foreground" /> Display Language
+                    </Label>
+                    <Select value={prefs.language} onValueChange={setPref("language")}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="en">English (US)</SelectItem>
+                        <SelectItem value="fil">Filipino (Tagalog)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Date Format</Label>
+                    <Select value={prefs.dateFormat} onValueChange={setPref("dateFormat")}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mdy">MM/DD/YYYY</SelectItem>
+                        <SelectItem value="dmy">DD/MM/YYYY</SelectItem>
+                        <SelectItem value="ymd">YYYY-MM-DD</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground" /> Time Format
+                    </Label>
+                    <Select value={prefs.timeFormat} onValueChange={setPref("timeFormat")}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="12h">12-hour (AM/PM)</SelectItem>
+                        <SelectItem value="24h">24-hour</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>Default Time Zone</Label>
+                    <Select value={prefs.timeZone} onValueChange={setPref("timeZone")}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ph">Asia/Manila (GMT+8)</SelectItem>
+                        <SelectItem value="utc">UTC</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 border-t border-border/60 pt-4">
+                  <Button variant="outline" onClick={() => setPrefs({ theme: "light", language: "en", dateFormat: "mdy", timeFormat: "12h", timeZone: "ph" })}>
+                    <RotateCcw className="mr-2 h-4 w-4" /> Reset
+                  </Button>
+                  <Button onClick={() => toast.success("Preferences saved")}>Save Preferences</Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 5. BACKUP & RESTORE */}
+          {activeTab === "backup" && showBackup && (
+            <Card className="rounded-xl border-border/70 shadow-sm">
+              <CardContent className="space-y-5 p-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/50 pb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                      <Database className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h2 className="font-display text-xl font-semibold">Backup &amp; Restore Manager</h2>
+                      <p className="text-xs text-muted-foreground">Generate database snapshots, schedule automated backups, and perform system rollbacks.</p>
+                    </div>
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {/* Notifications */}
         <SettingsCard
@@ -1930,21 +2451,38 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                       Manage system backups and restore points
                     </p>
                   </div>
+                  <Button onClick={createBackup} disabled={backupInProgress}>
+                    {backupInProgress ? "Creating Snapshot…" : "Create Backup Snapshot"}
+                  </Button>
                 </div>
-                <Button onClick={createBackup} disabled={backupInProgress}>
-                  {backupInProgress ? "Creating backup…" : "Create backup"}
-                </Button>
-              </div>
 
-              {backupInProgress && (
-                <div className="space-y-1">
-                  <Progress value={backupProgress} className="h-2" />
-                  <p className="text-xs text-muted-foreground">
-                    Backing up system data… {backupProgress}%
-                  </p>
-                </div>
-              )}
+                {backupInProgress && (
+                  <div className="space-y-1">
+                    <Progress value={backupProgress} className="h-2" />
+                    <p className="text-xs text-muted-foreground">Backing up database tables… {backupProgress}%</p>
+                  </div>
+                )}
 
+                <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border/70 bg-muted/30 p-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Automated Scheduled Backups</p>
+                    <p className="text-xs text-muted-foreground">Automatically trigger system data snapshots on a recurring schedule.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {autoBackupEnabled && (
+                      <Select value={backupSchedule} onValueChange={setBackupSchedule}>
+                        <SelectTrigger className="h-9 w-36">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="daily">Daily</SelectItem>
+                          <SelectItem value="weekly">Weekly</SelectItem>
+                          <SelectItem value="monthly">Monthly</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <Switch checked={autoBackupEnabled} onCheckedChange={setAutoBackupEnabled} aria-label="Automatic backups" />
+                  </div>
               <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-caution/30 bg-caution/10 p-4">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">Automatic backups</p>
@@ -1971,8 +2509,69 @@ export function SettingsPage({ role }: { role: "superadmin" | "admin" | "employe
                     aria-label="Automatic backups"
                   />
                 </div>
-              </div>
 
+                <div className="max-h-[18rem] overflow-auto rounded-lg border border-border/70">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Snapshot ID</TableHead>
+                        <TableHead>Timestamp</TableHead>
+                        <TableHead>Size</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {backupsPage.pageItems.map((b) => (
+                        <TableRow key={b.id}>
+                          <TableCell className="text-xs font-mono font-medium">{b.id}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{b.timestamp}</TableCell>
+                          <TableCell className="text-xs">{b.size}</TableCell>
+                          <TableCell className="text-xs">{b.type}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button size="icon" variant="ghost" className="h-8 w-8" title="Download backup" onClick={() => toast.success(`Downloading ${b.id}`)}>
+                                <Download className="h-4 w-4" />
+                              </Button>
+                              <AlertDialog open={restoreTarget?.id === b.id} onOpenChange={(o) => !o && setRestoreTarget(null)}>
+                                <AlertDialogTrigger asChild>
+                                  <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setRestoreTarget(b)}>
+                                    Restore
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Restore System from {b.id}?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will roll back system data to the {b.timestamp} snapshot. Any unsaved changes made after this point will be overwritten.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={restoreBackup}>Yes, Restore</AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <TablePagination
+                  page={backupsPage.page}
+                  pageCount={backupsPage.pageCount}
+                  from={backupsPage.from}
+                  to={backupsPage.to}
+                  total={backupsPage.total}
+                  label="backups"
+                  onPageChange={backupsPage.setPage}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </div>
               <div className="max-h-80 overflow-y-auto rounded-lg border border-border/70">
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-card">

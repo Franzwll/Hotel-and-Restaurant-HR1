@@ -28,6 +28,10 @@ export function TablePagination({
   className,
 }: TablePaginationProps) {
   return (
+    <div className={cn("mt-4 flex flex-wrap items-center justify-between gap-3", className)}>
+      <p className="text-xs text-muted-foreground">
+        Showing {from}–{to} of {total} {label}
+      </p>
     <div
       className={cn(
         "mt-4 flex flex-wrap items-center gap-3",
@@ -52,6 +56,7 @@ export function TablePagination({
         >
           Previous
         </Button>
+        {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
         {Array.from({ length: Math.max(1, pageCount) }, (_, i) => i + 1).map((p) => (
           <Button
             key={p}

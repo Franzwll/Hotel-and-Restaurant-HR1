@@ -127,11 +127,14 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+import { Preloader } from "../components/ui/preloader";
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
+      <Preloader />
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
       <Toaster position="top-right" richColors />
