@@ -196,43 +196,6 @@ export type NewHire = {
   phone: string;
 };
 
-/** Checklist request raised for a probationary hire's evaluation cycle. */
-export type ChecklistRequest = {
-  id: string;
-  employee: string;
-  position: string;
-  department: string;
-  requestedAt: string;
-  notes: string;
-  items: string[];
-  status: "Open" | "Checklist created";
-};
-
-export const checklistRequests: ChecklistRequest[] = [
-  {
-    id: "CR-001",
-    employee: "Miguel Torres",
-    position: "Front Desk Receptionist",
-    department: "Front Office",
-    requestedAt: "2026-08-04",
-    notes:
-      "Please include guest-handling scenarios and PMS proficiency checks before the 3rd month review. Supervisor sign-off required for each item.",
-    items: [],
-    status: "Open",
-  },
-  {
-    id: "CR-002",
-    employee: "Andrea Lim",
-    position: "Housekeeping Attendant",
-    department: "Housekeeping",
-    requestedAt: "2026-08-06",
-    notes:
-      "Add room-turnover timing and chemical-handling safety items. Needed for the 5th month evaluation window.",
-    items: [],
-    status: "Open",
-  },
-];
-
 export const newHires: NewHire[] = [
   {
     id: "NH-01",

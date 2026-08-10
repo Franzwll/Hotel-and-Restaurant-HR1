@@ -64,7 +64,7 @@ const headcountTrend = [
   { month: "Jul", headcount: 93, hires: 8, exits: 4 },
 ];
 
-function SuperAdminDashboard() {
+export function SuperAdminDashboard() {
   const openJobs = jobs.filter((j) => j.active).length;
   const totalApplicants = jobs.reduce((t, j) => t + j.applicants, 0);
 
