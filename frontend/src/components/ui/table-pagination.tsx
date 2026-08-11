@@ -31,37 +31,35 @@ export function TablePagination({
       <p className="text-xs text-muted-foreground">
         Showing {from}–{to} of {total} {label}
       </p>
-      {pageCount > 1 && (
-        <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={page <= 1}
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+        >
+          Previous
+        </Button>
+        {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
           <Button
+            key={p}
             size="sm"
-            variant="outline"
-            disabled={page <= 1}
-            onClick={() => onPageChange(Math.max(1, page - 1))}
+            variant={p === page ? "default" : "outline"}
+            className="w-9"
+            onClick={() => onPageChange(p)}
           >
-            Previous
+            {p}
           </Button>
-          {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-            <Button
-              key={p}
-              size="sm"
-              variant={p === page ? "default" : "outline"}
-              className="w-9"
-              onClick={() => onPageChange(p)}
-            >
-              {p}
-            </Button>
-          ))}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={page >= pageCount}
-            onClick={() => onPageChange(Math.min(pageCount, page + 1))}
-          >
-            Next
-          </Button>
-        </div>
-      )}
+        ))}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={page >= pageCount}
+          onClick={() => onPageChange(Math.min(pageCount, page + 1))}
+        >
+          Next
+        </Button>
+      </div>
     </div>
   );
 }
