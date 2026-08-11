@@ -310,6 +310,7 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
   });
   const [preview, setPreview] = useState("Website");
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [dialogPreview, setDialogPreview] = useState("Website");
   const [customPosterUrl, setCustomPosterUrl] = useState<string | null>(null);
 
   const [deptDialogOpen, setDeptDialogOpen] = useState(false);
@@ -627,8 +628,7 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
     setReqPage(1);
   };
   // Requisitions use the same aligned-column treatment as the postings list view.
-  const reqGridCols =
-    "grid-cols-[minmax(130px,1.1fr)_106px_62px_88px_80px_86px_112px_96px_104px]";
+  const reqGridCols = "grid-cols-[minmax(130px,1.1fr)_106px_62px_88px_80px_86px_112px_96px_104px]";
 
   function ListSortHead({
     sortKey,
@@ -814,6 +814,48 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
       </p>
     </div>
   );
+
+  /** Compact summary used by the inline tabs — the full render lives in the Preview post dialog. */
+  const renderShortPreview = (channel: string) => {
+    const meta = platformMeta.find((p) => p.key === channel);
+    const Icon = meta?.icon ?? Globe;
+    const cta =
+      channel === "Website"
+        ? "Apply Now"
+        : channel === "Indeed"
+          ? "Apply with Indeed"
+          : channel === "Facebook"
+            ? "Like · Comment · Share"
+            : "Like · Comment · Share";
+    return (
+      <div className="space-y-2.5 rounded-md border border-border bg-card p-3">
+        <div className="flex items-center gap-2 text-[0.7rem] font-semibold text-muted-foreground">
+          <Icon className="h-3.5 w-3.5 text-gold" />
+          {channel}
+        </div>
+        <div>
+          <p className="text-sm font-semibold leading-tight text-foreground">
+            {draft.title || "Untitled role"}
+          </p>
+          <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
+            {draft.department || "Department"} · Makati City · {draft.employmentType}
+          </p>
+        </div>
+        {(draft.salaryMin || draft.salaryMax) && (
+          <p className="text-[0.7rem] font-semibold text-primary">{salaryLine}</p>
+        )}
+        {draft.description && (
+          <p className="line-clamp-2 text-[0.7rem] text-muted-foreground">{draft.description}</p>
+        )}
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+          <span className="text-[0.7rem] font-medium text-foreground">{cta}</span>
+          <span className="text-[0.65rem] text-muted-foreground">
+            Full view in <span className="font-medium">Preview post</span>
+          </span>
+        </div>
+      </div>
+    );
+  };
 
   const renderWebsitePreview = () => (
     <div className="space-y-5 rounded-md border border-border bg-card p-6">
@@ -2021,16 +2063,16 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
                         </TabsList>
 
                         <TabsContent value="Website" className="mt-3 text-[0.7rem]">
-                          {renderWebsitePreview()}
+                          {renderShortPreview("Website")}
                         </TabsContent>
                         <TabsContent value="Indeed" className="mt-3 text-[0.7rem]">
-                          {renderIndeedPreview()}
+                          {renderShortPreview("Indeed")}
                         </TabsContent>
                         <TabsContent value="Facebook" className="mt-3 text-[0.7rem]">
-                          {renderFacebookPreview()}
+                          {renderShortPreview("Facebook")}
                         </TabsContent>
                         <TabsContent value="Instagram" className="mt-3 text-[0.7rem]">
-                          {renderInstagramPreview()}
+                          {renderShortPreview("Instagram")}
                         </TabsContent>
                       </Tabs>
                       <div className="mt-3 flex items-center justify-between gap-2">
@@ -2039,7 +2081,10 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
                           type="button"
                           size="sm"
                           variant="outline"
-                          onClick={() => setPreviewDialogOpen(true)}
+                          onClick={() => {
+                            setDialogPreview(preview);
+                            setPreviewDialogOpen(true);
+                          }}
                         >
                           Preview post
                         </Button>
@@ -2057,17 +2102,32 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display text-2xl">
-              {draft.title || "Untitled position"} — {preview} preview
+              {draft.title || "Untitled position"} — {dialogPreview} preview
             </DialogTitle>
             <DialogDescription>
-              Full-size preview of how this posting will appear on {preview}.
+              Full-size preview of how this posting will appear on {dialogPreview}.
             </DialogDescription>
           </DialogHeader>
+          <div className="flex flex-wrap gap-2">
+            {platformMeta.map((p) => (
+              <Button
+                key={p.key}
+                type="button"
+                size="sm"
+                variant={dialogPreview === p.key ? "default" : "outline"}
+                className="cursor-pointer"
+                onClick={() => setDialogPreview(p.key)}
+              >
+                <p.icon className="mr-1.5 h-3.5 w-3.5" />
+                {p.key}
+              </Button>
+            ))}
+          </div>
           <div className="text-sm">
-            {preview === "Website" && renderWebsitePreview()}
-            {preview === "Indeed" && renderIndeedPreview()}
-            {preview === "Facebook" && renderFacebookPreview()}
-            {preview === "Instagram" && renderInstagramPreview()}
+            {dialogPreview === "Website" && renderWebsitePreview()}
+            {dialogPreview === "Indeed" && renderIndeedPreview()}
+            {dialogPreview === "Facebook" && renderFacebookPreview()}
+            {dialogPreview === "Instagram" && renderInstagramPreview()}
           </div>
         </DialogContent>
       </Dialog>
