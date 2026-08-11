@@ -2,11 +2,15 @@ import { useEffect, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
+  BadgeCheck,
+  Clock,
   Download,
   FileText,
+  FolderOpen,
   Pencil,
   Minus,
   Plus,
+  Printer,
   Search,
   ShieldCheck,
   Trash2,
@@ -15,6 +19,8 @@ import {
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/portal/PageHeader";
+import { ListBody } from "@/components/portal/ListBody";
+import { ListEmptyState } from "@/components/portal/ListEmptyState";
 import { SortHead, useSort } from "@/components/portal/sortable";
 import { StatCard } from "@/components/portal/StatCard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -298,6 +304,10 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
 
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | Employee["employmentType"]>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | Employee["status"]>("all");
+  /** Supervisor picker options — existing employees plus an unassigned marker. */
+  const supervisorOptions = ["—", ...Array.from(new Set(list.map((e) => e.name)))];
   const [selected, setSelected] = useState<string[]>([]);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -320,6 +330,12 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
   });
   const [profileTab, setProfileTab] = useState("personal");
   const [historyFormOpen, setHistoryFormOpen] = useState(false);
+  const [editingHistoryId, setEditingHistoryId] = useState<string | null>(null);
+  const [editHistory, setEditHistory] = useState<{
+    type: HistoryEntry["type"];
+    date: string;
+    detail: string;
+  }>({ type: "Promotion", date: "", detail: "" });
   const [logAction, setLogAction] = useState("all");
   const [bulkPickOpen, setBulkPickOpen] = useState(false);
   const [bulkTypes, setBulkTypes] = useState<string[]>([documentTypes[0]!]);
@@ -338,8 +354,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
     name: string;
     file: string;
   } | null>(null);
-  const [personalOpen, setPersonalOpen] = useState(false);
-  const [employmentOpen, setEmploymentOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [personalForm, setPersonalForm] = useState<Record<string, string>>({});
   const [employmentForm, setEmploymentForm] = useState<Record<string, string>>({});
 
@@ -349,6 +364,8 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
     const archived = archivedIds.includes(e.id);
     if (listView === "archived" ? !archived : archived) return false;
     if (dept !== "all" && e.department !== dept) return false;
+    if (typeFilter !== "all" && e.employmentType !== typeFilter) return false;
+    if (statusFilter !== "all" && e.status !== statusFilter) return false;
     if (search && !`${e.name} ${e.position} ${e.id}`.toLowerCase().includes(search.toLowerCase()))
       return false;
     return true;
@@ -419,6 +436,28 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
     }));
     toast.success("History record deleted");
   };
+
+  const startEditHistory = (h: HistoryEntry) => {
+    setEditingHistoryId(h.id);
+    setEditHistory({ type: h.type, date: h.date, detail: h.detail });
+  };
+
+  const saveEditHistory = () => {
+    if (!profile || !editingHistoryId) return;
+    if (!editHistory.detail.trim()) {
+      toast.error("Enter the history details");
+      return;
+    }
+    setHistory((h) => ({
+      ...h,
+      [profile.id]: historyFor(profile).map((x) =>
+        x.id === editingHistoryId ? { ...x, ...editHistory } : x,
+      ),
+    }));
+    setEditingHistoryId(null);
+    toast.success("History record updated");
+  };
+
 
   const createEmployee = () => {
     if (!form.name.trim() || !form.position.trim()) {
@@ -533,7 +572,6 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
       emergencyRelation: String(p.emergencyRelation),
       emergencyPhone: String(p.emergencyPhone),
     });
-    setPersonalOpen(true);
   };
 
   const savePersonal = () => {
@@ -548,8 +586,6 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
       ...prev,
       [profile.id]: { ...(prev[profile.id] ?? {}), ...rest },
     }));
-    setPersonalOpen(false);
-    toast.success("Personal information updated");
   };
 
   const openEmploymentEdit = () => {
@@ -563,7 +599,6 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
       supervisor: profile.supervisor,
       email: profile.email,
     });
-    setEmploymentOpen(true);
   };
 
   const saveEmployment = () => {
@@ -586,8 +621,27 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
           : e,
       ),
     );
-    setEmploymentOpen(false);
-    toast.success("Employment information updated");
+  };
+
+  const openEdit = () => {
+    openPersonalEdit();
+    openEmploymentEdit();
+    setEditMode(true);
+  };
+
+  const saveEdit = () => {
+    savePersonal();
+    saveEmployment();
+    setEditMode(false);
+    toast.success("Record updated");
+  };
+
+  const cancelEdit = () => setEditMode(false);
+
+  const printRecord = () => {
+    if (!profile) return;
+    toast.success(`Preparing ${profile.name}'s record for printing…`);
+    window.print();
   };
 
   return (
@@ -605,23 +659,46 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Employees" value={list.length} icon={Users} tone="primary" />
+      <div className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Total Employees"
+          value={list.length}
+          icon={Users}
+          tone="primary"
+          onClick={() => {
+            setTypeFilter("all");
+            setStatusFilter("all");
+          }}
+        />
         <StatCard
           label="Regular"
           value={list.filter((e) => e.employmentType === "Regular").length}
+          icon={BadgeCheck}
           tone="success"
+          onClick={() => {
+            setTypeFilter("Regular");
+            setStatusFilter("all");
+          }}
         />
         <StatCard
           label="Probationary"
           value={list.filter((e) => e.employmentType === "Probationary").length}
+          icon={Clock}
           tone="gold"
+          onClick={() => {
+            setTypeFilter("Probationary");
+            setStatusFilter("all");
+          }}
         />
         <StatCard
           label="Inactive"
           value={list.filter((e) => e.status === "Inactive").length}
           icon={Users}
           tone="caution"
+          onClick={() => {
+            setStatusFilter("Inactive");
+            setTypeFilter("all");
+          }}
         />
       </div>
 
@@ -719,6 +796,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
               </div>
 
               <div className="mt-4 overflow-x-auto">
+                <ListBody>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -828,9 +906,10 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                                 setProfileId(e.id);
                                 setProfileTab("personal");
                                 setHistoryFormOpen(false);
+                                setEditMode(false);
                               }}
                             >
-                              View 201 file
+                              <FolderOpen className="mr-2 h-3.5 w-3.5" /> View Records
                             </Button>
                             {isSuper &&
                               (archivedIds.includes(e.id) ? (
@@ -856,6 +935,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                     ))}
                   </TableBody>
                 </Table>
+                </ListBody>
               </div>
               <TablePagination
                 page={employeePage.page}
@@ -918,6 +998,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
               </div>
 
               <div className="mt-4 overflow-x-auto">
+                <ListBody>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -967,8 +1048,16 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                         <TableCell className="text-xs text-muted-foreground">{l.notes}</TableCell>
                       </TableRow>
                     ))}
+                    {logPage.pageItems.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-8">
+                          <ListEmptyState placeholder="Search actor, target, notes…" />
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
+                </ListBody>
               </div>
               <TablePagination
                 page={logPage.page}
@@ -1053,7 +1142,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
 
       {/* 201 FILE */}
       <Dialog open={!!profile} onOpenChange={(o) => !o && setProfileId(null)}>
-        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent className="flex h-[96vh] flex-col gap-3 overflow-hidden sm:max-w-6xl">
           {profile &&
             (() => {
               const p = { ...buildProfile(profile), ...(personalOverrides[profile.id] ?? {}) };
@@ -1075,7 +1164,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                     </p>
                   )}
 
-                  <Tabs value={profileTab} onValueChange={setProfileTab}>
+                  <Tabs value={profileTab} onValueChange={setProfileTab} className="flex min-h-0 flex-1 flex-col">
                     <TabsList className="flex h-auto flex-wrap justify-start">
                       <TabsTrigger value="personal">Personal Information</TabsTrigger>
                       <TabsTrigger value="documents">Documents</TabsTrigger>
@@ -1083,18 +1172,27 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                     </TabsList>
 
                     {isSuper && (
-                      <div className="mt-3 flex flex-wrap gap-2 border-b border-border pb-3">
+                      <div className="mt-3 flex h-12 flex-nowrap items-center gap-2 overflow-x-auto border-b border-border pb-3">
                         {profileTab === "personal" && (
                           <>
-                            <Button size="sm" variant="outline" onClick={openPersonalEdit}>
-                              <Pencil className="mr-2 h-3.5 w-3.5" /> Edit personal data
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={openEmploymentEdit}>
-                              <Pencil className="mr-2 h-3.5 w-3.5" /> Edit employment
-                            </Button>
+                            {!editMode ? (
+                              <Button size="sm" variant="outline" onClick={openEdit}>
+                                <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
+                              </Button>
+                            ) : (
+                              <>
+                                <Button size="sm" onClick={saveEdit}>
+                                  Save changes
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={cancelEdit}>
+                                  Cancel
+                                </Button>
+                              </>
+                            )}
                             <Button
                               size="sm"
-                              variant="destructive"
+                              variant="outline"
+                              className="border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
                               onClick={() => removeEmployee(profile.id)}
                             >
                               <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete record
@@ -1124,37 +1222,141 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                       </div>
                     )}
 
-                    <TabsContent value="personal" className="mt-3 space-y-3">
+                    <TabsContent value="personal" className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
                       <Section title="Personal details">
-                        <Field k="Full name" v={profile.name} />
-                        <Field k="Birth date" v={p.birthDate} />
-                        <Field k="Gender" v={p.gender} />
-                        <Field k="Civil status" v={p.civilStatus} />
-                        <Field k="Nationality" v={p.nationality} />
+                        <EF
+                          label="Full name"
+                          value={editMode ? (personalForm["name"] ?? "") : profile.name}
+                          editing={editMode}
+                          onChange={(v) => setPersonalForm((prev) => ({ ...prev, name: v }))}
+                        />
+                        <EF
+                          label="Birth date"
+                          value={editMode ? (personalForm["birthDate"] ?? "") : p.birthDate}
+                          editing={editMode}
+                          onChange={(v) => setPersonalForm((prev) => ({ ...prev, birthDate: v }))}
+                        />
+                        <EF
+                          label="Gender"
+                          value={editMode ? (personalForm["gender"] ?? "") : p.gender}
+                          editing={editMode}
+                          onChange={(v) => setPersonalForm((prev) => ({ ...prev, gender: v }))}
+                        />
+                        <EF
+                          label="Civil status"
+                          value={editMode ? (personalForm["civilStatus"] ?? "") : p.civilStatus}
+                          editing={editMode}
+                          onChange={(v) => setPersonalForm((prev) => ({ ...prev, civilStatus: v }))}
+                        />
+                        <EF
+                          label="Nationality"
+                          value={editMode ? (personalForm["nationality"] ?? "") : p.nationality}
+                          editing={editMode}
+                          onChange={(v) => setPersonalForm((prev) => ({ ...prev, nationality: v }))}
+                        />
                       </Section>
                       <Section title="Contact information">
                         <Field k="Company email" v={profile.email} />
-                        <Field k="Personal email" v={p.personalEmail} />
-                        <Field k="Mobile number" v={profile.phone} />
-                        <Field k="Home address" v={p.address} wide />
+                        <EF
+                          label="Personal email"
+                          value={editMode ? (personalForm["personalEmail"] ?? "") : p.personalEmail}
+                          editing={editMode}
+                          onChange={(v) =>
+                            setPersonalForm((prev) => ({ ...prev, personalEmail: v }))
+                          }
+                        />
+                        <EF
+                          label="Mobile number"
+                          value={editMode ? (personalForm["phone"] ?? "") : profile.phone}
+                          editing={editMode}
+                          onChange={(v) => setPersonalForm((prev) => ({ ...prev, phone: v }))}
+                        />
+                        <EF
+                          label="Home address"
+                          value={editMode ? (personalForm["address"] ?? "") : p.address}
+                          editing={editMode}
+                          onChange={(v) => setPersonalForm((prev) => ({ ...prev, address: v }))}
+                          wide
+                        />
                       </Section>
                       <Section title="Family information">
                         <Field k="Family" v={p.family} wide />
                       </Section>
                       <Section title="Emergency contact">
-                        <Field k="Name" v={p.emergencyName} />
-                        <Field k="Relationship" v={p.emergencyRelation} />
-                        <Field k="Contact number" v={p.emergencyPhone} />
+                        <EF
+                          label="Name"
+                          value={editMode ? (personalForm["emergencyName"] ?? "") : p.emergencyName}
+                          editing={editMode}
+                          onChange={(v) =>
+                            setPersonalForm((prev) => ({ ...prev, emergencyName: v }))
+                          }
+                        />
+                        <EF
+                          label="Relationship"
+                          value={
+                            editMode ? (personalForm["emergencyRelation"] ?? "") : p.emergencyRelation
+                          }
+                          editing={editMode}
+                          onChange={(v) =>
+                            setPersonalForm((prev) => ({ ...prev, emergencyRelation: v }))
+                          }
+                        />
+                        <EF
+                          label="Contact number"
+                          value={
+                            editMode ? (personalForm["emergencyPhone"] ?? "") : p.emergencyPhone
+                          }
+                          editing={editMode}
+                          onChange={(v) =>
+                            setPersonalForm((prev) => ({ ...prev, emergencyPhone: v }))
+                          }
+                        />
                       </Section>
 
                       <Section title="Employment information">
                         <Field k="Employee number" v={profile.id} />
-                        <Field k="Position" v={profile.position} />
-                        <Field k="Department" v={profile.department} />
+                        <EF
+                          label="Position"
+                          value={editMode ? (employmentForm["position"] ?? "") : profile.position}
+                          editing={editMode}
+                          onChange={(v) => setEmploymentForm((prev) => ({ ...prev, position: v }))}
+                        />
+                        <ESelect
+                          label="Department"
+                          value={
+                            editMode ? (employmentForm["department"] ?? "") : profile.department
+                          }
+                          editing={editMode}
+                          options={departments.map((d) => d.name)}
+                          onChange={(v) =>
+                            setEmploymentForm((prev) => ({ ...prev, department: v }))
+                          }
+                        />
                         <Field k="Outlet / Branch" v="Oxford Suites Makati" />
-                        <Field k="Status" v={profile.status} />
-                        <Field k="Date hired" v={profile.dateHired} />
-                        <Field k="Immediate supervisor" v={profile.supervisor} />
+                        <ESelect
+                          label="Status"
+                          value={editMode ? (employmentForm["status"] ?? "") : profile.status}
+                          editing={editMode}
+                          options={["Active", "Inactive"]}
+                          onChange={(v) => setEmploymentForm((prev) => ({ ...prev, status: v }))}
+                        />
+                        <EF
+                          label="Date hired"
+                          value={editMode ? (employmentForm["dateHired"] ?? "") : profile.dateHired}
+                          editing={editMode}
+                          onChange={(v) => setEmploymentForm((prev) => ({ ...prev, dateHired: v }))}
+                        />
+                        <ESelect
+                          label="Immediate supervisor"
+                          value={
+                            editMode ? (employmentForm["supervisor"] ?? "") : profile.supervisor
+                          }
+                          editing={editMode}
+                          options={supervisorOptions}
+                          onChange={(v) =>
+                            setEmploymentForm((prev) => ({ ...prev, supervisor: v }))
+                          }
+                        />
                         <Field k="Shift" v="AM Shift · 07:00 – 16:00" />
                         <Field
                           k="Rate"
@@ -1176,7 +1378,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                       )}
                     </TabsContent>
 
-                    <TabsContent value="documents" className="mt-3 space-y-3">
+                    <TabsContent value="documents" className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
                       <div className="space-y-1.5">
                         {docsFor(profile).map((doc, i) => (
                           <div
@@ -1232,7 +1434,7 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="history" className="mt-3 space-y-3">
+                    <TabsContent value="history" className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
                       {isSuper && historyFormOpen && (
                         <div className="rounded-md border border-border p-3">
                           <p className="eyebrow mb-2">New history entry</p>
@@ -1288,30 +1490,95 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                           .map((h) => (
                             <div
                               key={h.id}
-                              className="flex items-center justify-between rounded-md border border-border p-2.5"
+                              className="rounded-md border border-border p-2.5"
                             >
-                              <div className="flex items-start gap-3">
-                                <Badge
-                                  variant="secondary"
-                                  className="mt-0.5 shrink-0 text-[0.65rem]"
-                                >
-                                  {h.type}
-                                </Badge>
-                                <div>
-                                  <p className="text-sm">{h.detail}</p>
-                                  <p className="text-xs text-muted-foreground">{h.date}</p>
+                              {editingHistoryId === h.id ? (
+                                <div className="space-y-2">
+                                  <div className="grid gap-2 sm:grid-cols-3">
+                                    <Select
+                                      value={editHistory.type}
+                                      onValueChange={(v) =>
+                                        setEditHistory({
+                                          ...editHistory,
+                                          type: v as HistoryEntry["type"],
+                                        })
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {["Promotion", "Transfer", "Employment"].map((t) => (
+                                          <SelectItem key={t} value={t}>
+                                            {t}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <Input
+                                      type="date"
+                                      value={editHistory.date}
+                                      onChange={(e) =>
+                                        setEditHistory({ ...editHistory, date: e.target.value })
+                                      }
+                                    />
+                                    <Input
+                                      value={editHistory.detail}
+                                      onChange={(e) =>
+                                        setEditHistory({ ...editHistory, detail: e.target.value })
+                                      }
+                                    />
+                                  </div>
+                                  <div className="flex justify-end gap-2">
+                                    <Button size="sm" onClick={saveEditHistory}>
+                                      Save
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setEditingHistoryId(null)}
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
                                 </div>
-                              </div>
-                              {isSuper && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-7 w-7 shrink-0"
-                                  onClick={() => deleteHistory(h.id)}
-                                  aria-label="Delete history entry"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
+                              ) : (
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-start gap-3">
+                                    <Badge
+                                      variant="secondary"
+                                      className="mt-0.5 shrink-0 text-[0.65rem]"
+                                    >
+                                      {h.type}
+                                    </Badge>
+                                    <div>
+                                      <p className="text-sm">{h.detail}</p>
+                                      <p className="text-xs text-muted-foreground">{h.date}</p>
+                                    </div>
+                                  </div>
+                                  {isSuper && (
+                                    <div className="flex shrink-0 gap-1">
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7"
+                                        onClick={() => startEditHistory(h)}
+                                        aria-label="Edit history entry"
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7"
+                                        onClick={() => deleteHistory(h.id)}
+                                        aria-label="Delete history entry"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           ))}
@@ -1319,7 +1586,10 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
                     </TabsContent>
                   </Tabs>
 
-                  <DialogFooter>
+                  <DialogFooter className="mt-auto shrink-0 border-t border-border/60 pt-3">
+                    <Button variant="outline" onClick={printRecord}>
+                      <Printer className="mr-2 h-3.5 w-3.5" /> Print record
+                    </Button>
                     <Button variant="outline" onClick={() => toast("201 file exported as PDF")}>
                       Export 201 file
                     </Button>
@@ -1551,144 +1821,6 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
       </Dialog>
 
       {/* EDIT PERSONAL DATA */}
-      <Dialog open={personalOpen} onOpenChange={setPersonalOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Edit personal data</DialogTitle>
-            <DialogDescription>Update personal, contact and emergency details.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {[
-              ["name", "Full name"],
-              ["birthDate", "Birth date"],
-              ["gender", "Gender"],
-              ["civilStatus", "Civil status"],
-              ["nationality", "Nationality"],
-              ["personalEmail", "Personal email"],
-              ["phone", "Mobile number"],
-              ["address", "Home address"],
-              ["emergencyName", "Emergency contact name"],
-              ["emergencyRelation", "Relationship"],
-              ["emergencyPhone", "Emergency contact number"],
-            ].map(([key, label]) => (
-              <div key={key} className="space-y-1.5">
-                <Label>{label}</Label>
-                <Input
-                  value={personalForm[key!] ?? ""}
-                  onChange={(e) => setPersonalForm((prev) => ({ ...prev, [key!]: e.target.value }))}
-                />
-              </div>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPersonalOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={savePersonal}>Save changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* EDIT EMPLOYMENT */}
-      <Dialog open={employmentOpen} onOpenChange={setEmploymentOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Edit employment</DialogTitle>
-            <DialogDescription>
-              Update position, department and employment status.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label>Position</Label>
-              <Input
-                value={employmentForm["position"] ?? ""}
-                onChange={(e) =>
-                  setEmploymentForm((prev) => ({ ...prev, position: e.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Department</Label>
-              <Select
-                value={employmentForm["department"] ?? ""}
-                onValueChange={(v) => setEmploymentForm((prev) => ({ ...prev, department: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((d) => (
-                    <SelectItem key={d.code} value={d.name}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select
-                value={employmentForm["status"] ?? ""}
-                onValueChange={(v) => setEmploymentForm((prev) => ({ ...prev, status: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {["Active", "On Leave", "Separated"].map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Employment type</Label>
-              <Input
-                value={employmentForm["employmentType"] ?? ""}
-                onChange={(e) =>
-                  setEmploymentForm((prev) => ({ ...prev, employmentType: e.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Date hired</Label>
-              <Input
-                type="date"
-                value={employmentForm["dateHired"] ?? ""}
-                onChange={(e) =>
-                  setEmploymentForm((prev) => ({ ...prev, dateHired: e.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Immediate supervisor</Label>
-              <Input
-                value={employmentForm["supervisor"] ?? ""}
-                onChange={(e) =>
-                  setEmploymentForm((prev) => ({ ...prev, supervisor: e.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label>Company email</Label>
-              <Input
-                value={employmentForm["email"] ?? ""}
-                onChange={(e) => setEmploymentForm((prev) => ({ ...prev, email: e.target.value }))}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEmploymentOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={saveEmployment}>Save changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* ADD / EDIT DOCUMENT */}
       <Dialog open={!!docDialog} onOpenChange={(o) => !o && setDocDialog(null)}>
         <DialogContent className="sm:max-w-lg">
@@ -1739,9 +1871,9 @@ export function EmployeeRecords({ role }: { role: "superadmin" | "admin" }) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border p-3">
-      <p className="eyebrow mb-2">{title}</p>
-      <div className="grid gap-2 sm:grid-cols-2">{children}</div>
+    <div className="rounded-md border border-border px-3 py-1.5">
+      <p className="eyebrow mb-1">{title}</p>
+      <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
     </div>
   );
 }
@@ -1749,8 +1881,71 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ k, v, wide }: { k: string; v: string; wide?: boolean }) {
   return (
     <div className={wide ? "sm:col-span-2" : undefined}>
-      <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">{k}</p>
-      <p className="text-sm">{v}</p>
+      <p className="text-[0.62rem] uppercase leading-tight tracking-wide text-muted-foreground">
+        {k}
+      </p>
+      <p className="text-[0.8rem] leading-snug">{v}</p>
+    </div>
+  );
+}
+
+/** Field that renders as read-only text, or an editable input when `editing` is true. */
+function EF({
+  label,
+  value,
+  editing,
+  onChange,
+  wide,
+}: {
+  label: string;
+  value: string;
+  editing: boolean;
+  onChange: (v: string) => void;
+  wide?: boolean;
+}) {
+  if (!editing) return wide ? <Field k={label} v={value} wide /> : <Field k={label} v={value} />;
+  return (
+    <div className={wide ? "sm:col-span-2 space-y-1.5" : "space-y-1.5"}>
+      <Label className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </Label>
+      <Input value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+/** Editable field backed by a dropdown of allowed values. */
+function ESelect({
+  label,
+  value,
+  editing,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  editing: boolean;
+  onChange: (v: string) => void;
+  options: string[];
+}) {
+  if (!editing) return <Field k={label} v={value} />;
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger>
+          <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o} value={o}>
+              {o}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

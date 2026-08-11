@@ -569,7 +569,7 @@ export function UserManagement() {
                                   <AlertDialogTitle>Delete {u.name}?</AlertDialogTitle>
                                   <AlertDialogDescription>
                                     This will permanently remove the user account. This action
-                                    cannot be undone.
+                                    cannot be undone..
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
