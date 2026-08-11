@@ -42,6 +42,14 @@ const recruitmentChildren = (base: string) => [
   { label: "New Hire Onboarding", to: `${base}/onboarding` },
 ];
 
+const essChildren = (base: string) => [
+  { label: "All Requests", to: `${base}/ess` },
+  { label: "Attendance", to: `${base}/ess?category=Attendance` },
+  { label: "Payroll", to: `${base}/ess?category=Payroll` },
+  { label: "Performance", to: `${base}/ess?category=Performance` },
+  { label: "Company Documents", to: `${base}/ess?category=Documents` },
+];
+
 const hcmChildren = (base: string) => [
   { label: "Organizational Chart", to: `${base}/org-chart` },
   { label: "Department & Position", to: `${base}/dept-pos` },
@@ -53,7 +61,7 @@ export function navForRole(role: Role): NavItem[] {
   if (role === "employee") {
     return [
       { label: "Dashboard", to: base, icon: LayoutDashboard },
-      { label: "ESS", to: `${base}/ess`, icon: Headset },
+      { label: "ESS", to: `${base}/ess`, icon: Headset, children: essChildren(base) },
       { label: "Onboarding", to: `${base}/onboarding`, icon: ClipboardCheck },
       { label: "Settings", to: `${base}/settings`, icon: Settings },
     ];

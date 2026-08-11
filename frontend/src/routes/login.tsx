@@ -109,6 +109,25 @@ function LoginPage() {
   const role = roles.find((r) => r.id === roleId)!;
   const [email, setEmail] = useState(role.email);
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const first = new Image();
+    first.src = montageImages[0]!.src;
+    const done = () => !cancelled && setReady(true);
+    first.decode?.().then(done).catch(done) ?? done();
+    first.onload = done;
+    montageImages.slice(1).forEach((s) => {
+      const img = new Image();
+      img.src = s.src;
+    });
+    const safety = window.setTimeout(done, 1500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(safety);
+    };
+  }, []);
 
   // Montage slideshow transition
   useEffect(() => {
@@ -128,6 +147,25 @@ function LoginPage() {
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
       {/* Property panel with omni-directional slow-motion montage edit */}
       <div className="relative hidden flex-col justify-between overflow-hidden px-12 py-10 text-primary-foreground lg:flex">
+        {/* Loading veil until the first frame decodes */}
+        <div
+          aria-hidden
+          className={cn(
+            "absolute inset-0 z-30 flex items-end bg-primary transition-opacity duration-700 p-12",
+            ready ? "pointer-events-none opacity-0" : "opacity-100",
+          )}
+        >
+          <div className="w-full max-w-sm space-y-4">
+            <Logo tone="invert" size="lg" />
+            <div className="h-px w-full overflow-hidden bg-primary-foreground/20">
+              <span className="hero-progress block h-full w-1/3 bg-gold animate-pulse" />
+            </div>
+            <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/60">
+              Preparing your workspace
+            </p>
+          </div>
+        </div>
+
         {/* Montage Slideshow Container */}
         <div className="absolute inset-0 z-0 overflow-hidden">
           {montageImages.map((img, index) => (

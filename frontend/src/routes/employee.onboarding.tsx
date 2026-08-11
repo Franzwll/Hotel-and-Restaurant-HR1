@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { EmployeeOnboarding } from "@/components/modules/AdminModules";
+import { NewHireOnboarding } from "@/components/modules/NewHireOnboarding";
+
 export const Route = createFileRoute("/employee/onboarding")({
   head: () => ({
     meta: [
@@ -9,5 +10,7 @@ export const Route = createFileRoute("/employee/onboarding")({
       { property: "og:description", content: "Complete your onboarding requirements and track your employment stage." },
     ],
   }),
-  component: () => <EmployeeOnboarding />,
+  component: () => <NewHireOnboarding role="employee" />,
 });
+
+

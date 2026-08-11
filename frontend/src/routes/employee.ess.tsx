@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { EmployeeEss } from "@/components/modules/EmployeeEss";
+import { EssManagement } from "@/components/modules/EssManagement";
 export const Route = createFileRoute("/employee/ess")({
   head: () => ({
     meta: [
@@ -9,5 +9,6 @@ export const Route = createFileRoute("/employee/ess")({
       { property: "og:description", content: "Attendance, schedule, leave, payroll, benefits and HR request submission." },
     ],
   }),
-  component: () => <EmployeeEss />,
+  component: () => <EssManagement role="employee" />,
 });
+

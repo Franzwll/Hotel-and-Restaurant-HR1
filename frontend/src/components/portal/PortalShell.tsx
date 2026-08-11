@@ -40,7 +40,9 @@ export function PortalShell({ role, children }: { role: Role; children: ReactNod
   const [open, setOpen] = useState(true);
   const meta = roleMeta[role];
   const nav = navForRole(role);
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const location = useRouterState({ select: (s) => s.location });
+  const pathname = location.pathname;
+  const searchStr = location.searchStr || "";
   const [expanded, setExpanded] = useState<string[]>([]);
   const [announceOpen, setAnnounceOpen] = useState(false);
   const {
@@ -58,9 +60,23 @@ export function PortalShell({ role, children }: { role: Role; children: ReactNod
   const isActive = (to: string) =>
     to === meta.base ? pathname === to : pathname.startsWith(to);
 
+  const isChildActive = (childTo: string) => {
+    const [childPath, childQuery] = childTo.split("?");
+    if (pathname !== childPath) return false;
+    if (!childQuery) {
+      return !searchStr || searchStr === "?" || !searchStr.includes("category=");
+    }
+    return searchStr.includes(childQuery);
+  };
+
   // Auto-expand the group that contains the active route.
   useEffect(() => {
-    const owner = nav.find((i) => i.children?.some((c) => pathname.startsWith(c.to)));
+    const owner = nav.find((i) =>
+      i.children?.some((c) => {
+        const [cPath] = c.to.split("?");
+        return pathname === cPath || pathname.startsWith(cPath);
+      }),
+    );
     if (owner) setExpanded((prev) => (prev.includes(owner.label) ? prev : [...prev, owner.label]));
   }, [pathname, nav]);
 
@@ -81,7 +97,10 @@ export function PortalShell({ role, children }: { role: Role; children: ReactNod
             {nav.map((item) => {
               const hasChildren = !!item.children?.length;
               const groupActive = hasChildren
-                ? item.children!.some((c) => pathname.startsWith(c.to))
+                ? item.children!.some((c) => {
+                    const [cPath] = c.to.split("?");
+                    return pathname === cPath || pathname.startsWith(cPath);
+                  })
                 : isActive(item.to);
               const isOpen = expanded.includes(item.label);
 
@@ -137,8 +156,8 @@ export function PortalShell({ role, children }: { role: Role; children: ReactNod
                           to={child.to}
                           className={cn(
                             "block rounded-md px-3 py-2 text-[0.8rem] transition-colors",
-                            pathname === child.to
-                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            isChildActive(child.to)
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                               : "text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
                           )}
                         >
