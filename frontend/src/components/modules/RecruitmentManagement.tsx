@@ -70,7 +70,6 @@ import { requisitionStore, useRequisitions, type Requisition } from "@/data/requ
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useSort } from "@/components/portal/sortable";
 import { cn } from "@/lib/utils";
-import hiringTemplate from "@/assets/hiring-template.png.asset.json";
 
 /** Colour-coded urgency badge classes. */
 const urgencyBadge = (urgency: string) =>
@@ -757,7 +756,7 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
       </div>
     );
 
-  const posterImageUrl = customPosterUrl ?? hiringTemplate.url;
+  const posterImageUrl = customPosterUrl ?? "/placeholder.svg";
 
   const handlePosterUpload = (file: File | null) => {
     if (!file) return;
@@ -1564,7 +1563,7 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
                         <Badge
                           variant="outline"
                           className={
-                            r.status === "Done"
+                            (r.status as string) === "Done"
                               ? "border-success/30 bg-success/15 text-success"
                               : r.status === "Converted"
                                 ? "border-border bg-muted text-muted-foreground"
