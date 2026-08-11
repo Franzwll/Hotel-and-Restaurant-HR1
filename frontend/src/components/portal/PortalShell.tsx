@@ -73,7 +73,7 @@ export function PortalShell({ role, children }: { role: Role; children: ReactNod
   useEffect(() => {
     const owner = nav.find((i) =>
       i.children?.some((c) => {
-        const [cPath] = c.to.split("?");
+        const [cPath] = (c.to ?? "").split("?");
         return pathname === cPath || pathname.startsWith(cPath);
       }),
     );
@@ -98,7 +98,7 @@ export function PortalShell({ role, children }: { role: Role; children: ReactNod
               const hasChildren = !!item.children?.length;
               const groupActive = hasChildren
                 ? item.children!.some((c) => {
-                    const [cPath] = c.to.split("?");
+                    const [cPath] = (c.to ?? "").split("?");
                     return pathname === cPath || pathname.startsWith(cPath);
                   })
                 : isActive(item.to);

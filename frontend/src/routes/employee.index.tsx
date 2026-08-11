@@ -64,7 +64,7 @@ function EmployeeDashboard() {
                 variant="outline"
                 className="h-auto flex-col items-start gap-2 p-4 text-left hover:border-primary hover:bg-primary/5 transition-all"
               >
-                <Link to="/employee/ess?category=Attendance">
+                <Link to="/employee/ess" search={{ category: "Attendance" }}>
                   <div className="rounded-md bg-primary/10 p-2 text-primary">
                     <Clock className="h-5 w-5" />
                   </div>
@@ -80,7 +80,7 @@ function EmployeeDashboard() {
                 variant="outline"
                 className="h-auto flex-col items-start gap-2 p-4 text-left hover:border-primary hover:bg-primary/5 transition-all"
               >
-                <Link to="/employee/ess?category=Payroll">
+                <Link to="/employee/ess" search={{ category: "Payroll" }}>
                   <div className="rounded-md bg-primary/10 p-2 text-primary">
                     <FileText className="h-5 w-5" />
                   </div>
@@ -96,7 +96,7 @@ function EmployeeDashboard() {
                 variant="outline"
                 className="h-auto flex-col items-start gap-2 p-4 text-left hover:border-primary hover:bg-primary/5 transition-all"
               >
-                <Link to="/employee/ess?category=Documents">
+                <Link to="/employee/ess" search={{ category: "Documents" }}>
                   <div className="rounded-md bg-primary/10 p-2 text-primary">
                     <FileCheck className="h-5 w-5" />
                   </div>
@@ -112,7 +112,7 @@ function EmployeeDashboard() {
                 variant="outline"
                 className="h-auto flex-col items-start gap-2 p-4 text-left hover:border-primary hover:bg-primary/5 transition-all"
               >
-                <Link to="/employee/ess?category=Performance">
+                <Link to="/employee/ess" search={{ category: "Performance" }}>
                   <div className="rounded-md bg-primary/10 p-2 text-primary">
                     <TrendingUp className="h-5 w-5" />
                   </div>
