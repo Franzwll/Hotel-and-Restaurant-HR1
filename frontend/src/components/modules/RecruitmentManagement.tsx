@@ -628,8 +628,7 @@ export function RecruitmentManagement({ role }: { role: "superadmin" | "admin" }
     setReqPage(1);
   };
   // Requisitions use the same aligned-column treatment as the postings list view.
-  const reqGridCols =
-    "grid-cols-[minmax(130px,1.1fr)_106px_62px_88px_80px_86px_112px_96px_104px]";
+  const reqGridCols = "grid-cols-[minmax(130px,1.1fr)_106px_62px_88px_80px_86px_112px_96px_104px]";
 
   function ListSortHead({
     sortKey,
