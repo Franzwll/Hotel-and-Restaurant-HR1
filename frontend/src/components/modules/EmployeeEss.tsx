@@ -302,6 +302,9 @@ export function EmployeeEss() {
     }
   };
 
+  const essTabTriggerClass =
+    "rounded-md px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-none";
+
   return (
     <div>
       <PageHeader
@@ -312,13 +315,13 @@ export function EmployeeEss() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
         {!isDedicatedModule && (
-          <TabsList className="flex h-auto flex-wrap justify-start border-b border-border bg-transparent p-0">
-            <TabsTrigger value="overview" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">Overview</TabsTrigger>
-            <TabsTrigger value="schedule" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">Schedule</TabsTrigger>
-            <TabsTrigger value="leave" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">Leave Balances</TabsTrigger>
-            <TabsTrigger value="benefits" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">Benefits &amp; Loans</TabsTrigger>
-            <TabsTrigger value="submit" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">Submit Request</TabsTrigger>
-            <TabsTrigger value="tracking" className="data-[state=active]:border-primary data-[state=active]:bg-muted rounded-md px-4 py-2 text-sm font-medium">All Requests</TabsTrigger>
+          <TabsList className="flex h-auto flex-wrap justify-start gap-1 border-b border-border bg-transparent p-0">
+            <TabsTrigger value="overview" className={essTabTriggerClass}>Overview</TabsTrigger>
+            <TabsTrigger value="schedule" className={essTabTriggerClass}>Schedule</TabsTrigger>
+            <TabsTrigger value="leave" className={essTabTriggerClass}>Leave Balances</TabsTrigger>
+            <TabsTrigger value="benefits" className={essTabTriggerClass}>Benefits &amp; Loans</TabsTrigger>
+            <TabsTrigger value="submit" className={essTabTriggerClass}>Submit Request</TabsTrigger>
+            <TabsTrigger value="tracking" className={essTabTriggerClass}>All Requests</TabsTrigger>
           </TabsList>
         )}
 
